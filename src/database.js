@@ -38,12 +38,13 @@ let db = loadDB();
 // ═══════════════════════════════════
 
 export const database = {
-  logUser(username, profile, server, createdById, createdByName) {
+  logUser(username, profile, server, createdById, createdByName, price = 0) {
     const entry = {
       id: db.nextId++,
       username,
       profile,
       server,
+      price,
       created_by_id: createdById,
       created_by_name: createdByName,
       created_at: new Date().toISOString(),
@@ -62,6 +63,7 @@ export const database = {
         username: u.username,
         profile: u.profile,
         server: u.server,
+        price: u.price || 0,
         created_by_id: u.createdById,
         created_by_name: u.createdByName,
         created_at: new Date().toISOString(),
@@ -89,6 +91,10 @@ export const database = {
       .slice(0, limit);
   },
 
+  getActiveUsers() {
+    return db.users.filter((u) => !u.is_deleted);
+  },
+
   getByProfile(profile, limit = 50) {
     return db.users
       .filter((u) => !u.is_deleted && u.profile === profile)
@@ -101,5 +107,45 @@ export const database = {
     const active = db.users.filter((u) => !u.is_deleted).length;
     const deleted = db.users.filter((u) => u.is_deleted).length;
     return { total_created, active, deleted };
+  },
+
+  // ═══════════════════════════════════
+  //  INCOME TRACKING
+  // ═══════════════════════════════════
+
+  getIncomeToday(todayStr) {
+    return db.users
+      .filter((u) => u.created_at.startsWith(todayStr))
+      .reduce((sum, u) => sum + (u.price || 0), 0);
+  },
+
+  getIncomeByDateRange(startStr, endStr) {
+    return db.users
+      .filter((u) => u.created_at >= startStr && u.created_at <= endStr)
+      .reduce((sum, u) => sum + (u.price || 0), 0);
+  },
+
+  getIncomeByProfile(startStr, endStr) {
+    const result = {};
+    db.users
+      .filter((u) => u.created_at >= startStr && u.created_at <= endStr)
+      .forEach((u) => {
+        if (!result[u.profile]) {
+          result[u.profile] = { count: 0, income: 0 };
+        }
+        result[u.profile].count++;
+        result[u.profile].income += (u.price || 0);
+      });
+    return result;
+  },
+
+  getTotalIncome() {
+    return db.users.reduce((sum, u) => sum + (u.price || 0), 0);
+  },
+
+  getUsersCreatedBefore(dateStr) {
+    return db.users.filter(
+      (u) => !u.is_deleted && u.created_at < dateStr
+    );
   },
 };

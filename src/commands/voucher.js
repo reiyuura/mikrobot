@@ -4,7 +4,7 @@ import { database } from '../database.js';
 import { config } from '../config.js';
 import {
   generateCode, formatDate, formatSpeed, formatSessionTimeout, now,
-  getProfileList, getProfile,
+  getProfileList, getProfile, formatCurrency,
 } from '../utils.js';
 
 // ═══════════════════════════════════
@@ -33,9 +33,9 @@ async function showVoucherProfiles(ctx) {
     for (const profile of profiles) {
       if (profile.name === 'default') continue;
 
-      const speed = formatSpeed(profile['rate-limit']);
+      const price = profile.price ? ` — ${formatCurrency(profile.price)}` : '';
       keyboard.text(
-        `${profile.label || profile.name} (${speed.display})`,
+        `${profile.label || profile.name}${price}`,
         `voucher:profile:${profile.name}`
       );
 
@@ -124,7 +124,6 @@ export function registerVoucher(bot) {
           name: code,
           password: code,
           profile: profileName,
-          server: config.hotspotServer,
           comment,
         });
 
@@ -132,7 +131,8 @@ export function registerVoucher(bot) {
         dbEntries.push({
           username: code,
           profile: profileName,
-          server: config.hotspotServer,
+          server: 'all',
+          price: getProfile(profileName)?.price || 0,
           createdById: ctx.from.id,
           createdByName: ctx.from.first_name,
         });
@@ -158,13 +158,14 @@ export function registerVoucher(bot) {
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `⚡ Speed  : ${speed.display}\n` +
         `⏱ Durasi : ${duration}\n` +
-        `🖥 Server : ${config.hotspotServer}\n` +
+        `💰 Harga  : ${formatCurrency(profileData?.price || 0)} / voucher\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<b>User / Pass:</b>\n\n` +
         voucherList +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📅 Dibuat: ${formatDate(now())}\n` +
-        `📊 Total: ${qty} voucher`,
+        `📊 Total: ${qty} voucher\n` +
+        `💵 Total: ${formatCurrency((profileData?.price || 0) * qty)}`,
         { parse_mode: 'HTML' }
       );
     } catch (error) {

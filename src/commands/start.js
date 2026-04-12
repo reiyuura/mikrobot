@@ -10,8 +10,9 @@ export function registerStart(bot) {
       .text('🗑 Hapus User', 'menu:deleteuser')
       .row()
       .text('👥 User Aktif', 'menu:active')
-      .text('📊 Info Server', 'menu:info')
+      .text('💰 Pendapatan', 'menu:income')
       .row()
+      .text('📊 Info Server', 'menu:info')
       .text('❓ Bantuan', 'menu:help');
 
     await ctx.reply(

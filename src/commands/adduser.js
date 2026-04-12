@@ -4,7 +4,7 @@ import { database } from '../database.js';
 import { config } from '../config.js';
 import {
   generateCode, formatDate, formatSpeed, formatSessionTimeout, now,
-  getProfileList, getProfile,
+  getProfileList, getProfile, formatCurrency,
 } from '../utils.js';
 
 // ═══════════════════════════════════
@@ -34,8 +34,8 @@ async function showProfileSelection(ctx) {
     for (const profile of profiles) {
       if (profile.name === 'default') continue;
 
-      const speed = formatSpeed(profile['rate-limit']);
-      const label = `${profile.label || profile.name} (${speed.display})`;
+      const price = profile.price ? ` — ${formatCurrency(profile.price)}` : '';
+      const label = `${profile.label || profile.name}${price}`;
       keyboard.text(label, `adduser:${profile.name}`);
 
       count++;
@@ -95,15 +95,16 @@ export function registerAddUser(bot) {
         name: code,
         password: code,
         profile: profileName,
-        server: config.hotspotServer,
         comment,
       });
 
-      // Log to database
-      database.logUser(code, profileName, config.hotspotServer, ctx.from.id, ctx.from.first_name);
-
-      // Get profile details for display (from hardcoded or API)
+      // Get profile details
       const profileData = getProfile(profileName);
+      const price = profileData?.price || 0;
+
+      // Log to database (with price)
+      database.logUser(code, profileName, 'all', ctx.from.id, ctx.from.first_name, price);
+
       const speed = formatSpeed(profileData?.['rate-limit']);
       const duration = formatSessionTimeout(profileData?.['session-timeout']);
 
@@ -116,7 +117,7 @@ export function registerAddUser(bot) {
         `📋 Profile  : ${profileData?.label || profileName}\n` +
         `⚡ Speed    : ${speed.display}\n` +
         `⏱ Durasi   : ${duration}\n` +
-        `🖥 Server   : ${config.hotspotServer}\n` +
+        `💰 Harga    : ${formatCurrency(profileData?.price || 0)}\n` +
         `📅 Dibuat   : ${formatDate(now())}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━`,
         { parse_mode: 'HTML' }

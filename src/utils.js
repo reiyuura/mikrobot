@@ -17,24 +17,32 @@ export const PROFILES = {
     label: '1 Hari',
     'session-timeout': '1d 00:00:00',
     'rate-limit': '3M/10M',
+    price: 3000,
+    validityDays: 1,
   },
   '2hari': {
     name: '2hari',
     label: '2 Hari',
-    'session-timeout': '',
+    'session-timeout': '2d 00:00:00',
     'rate-limit': '3M/15M',
+    price: 5000,
+    validityDays: 2,
   },
   '7hari': {
     name: '7hari',
     label: '7 Hari',
     'session-timeout': '7d 00:00:00',
     'rate-limit': '4M/20M',
+    price: 15000,
+    validityDays: 7,
   },
   'keluarga': {
     name: 'keluarga',
-    label: 'Keluarga',
-    'session-timeout': '',
+    label: 'Keluarga (30 Hari)',
+    'session-timeout': '30d 00:00:00',
     'rate-limit': '5M/20M',
+    price: 50000,
+    validityDays: 30,
   },
 };
 
@@ -133,4 +141,8 @@ export function formatMemory(free, total) {
   const used = totalNum - freeNum;
   const percent = Math.round((used / totalNum) * 100);
   return `${formatBytes(used)} / ${formatBytes(totalNum)} (${percent}%)`;
+}
+
+export function formatCurrency(amount) {
+  return 'Rp ' + Number(amount).toLocaleString('id-ID');
 }

@@ -47,23 +47,17 @@ class MikroTikAPI {
     return users.find((u) => u.name === name) || null;
   }
 
-  async addUser({ name, password, profile, server, comment }) {
-    // Use POST command-style (more compatible across RouterOS versions)
-    const { data } = await this.client.post('/ip/hotspot/user/add', {
-      name,
-      password,
-      profile,
-      server: server || config.hotspotServer,
-      comment: comment || '',
-    });
+  async addUser({ name, password, profile, comment }) {
+    // Use PUT (CRUD style, tested & working on RouterOS 7.21.3)
+    const body = { name, password, profile };
+    if (comment) body.comment = comment;
+
+    const { data } = await this.client.put('/ip/hotspot/user', body);
     return data;
   }
 
   async removeUser(id) {
-    // Use POST command-style for removal
-    const { data } = await this.client.post('/ip/hotspot/user/remove', {
-      '.id': id,
-    });
+    const { data } = await this.client.delete(`/ip/hotspot/user/${id}`);
     return data;
   }
 

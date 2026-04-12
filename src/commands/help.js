@@ -22,12 +22,14 @@ async function showHelp(ctx) {
     `/deleteuser <i>username</i> — Hapus user langsung\n` +
     `/active — Lihat user yang sedang online\n` +
     `/info — Info server MikroTik\n` +
+    `/income — Laporan pendapatan\n` +
     `/help — Panduan ini\n\n` +
     `<b>💡 Tips:</b>\n` +
     `• Username = Password (tinggal copy)\n` +
     `• Gunakan /voucher untuk buat banyak user sekaligus\n` +
-    `• User otomatis expired sesuai profile MikroTik\n` +
-    `• /deleteuser akan kick user yang sedang online\n\n` +
+    `• User otomatis dihapus saat masa aktif habis 🧹\n` +
+    `• /deleteuser akan kick user yang sedang online\n` +
+    `• Harga tercatat otomatis di /income\n\n` +
     `<b>🔗 Koneksi:</b>\n` +
     `Bot → WireGuard → MikroTik REST API\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━`,
