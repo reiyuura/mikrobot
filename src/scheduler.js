@@ -1,15 +1,69 @@
 import { mikrotik } from './mikrotik.js';
 import { database } from './database.js';
-import { getProfile, now } from './utils.js';
+import { getProfile, now, formatCurrency } from './utils.js';
 
 const CHECK_INTERVAL = 60 * 60 * 1000; // 1 jam
 let schedulerTimer = null;
 let notifyFn = null;
 
 // ═══════════════════════════════════
-//  AUTO-CLEANUP SCHEDULER
-//  Cek setiap 1 jam, hapus user yang
-//  sudah melewati validity period
+//  1) CHECK FIRST-LOGIN (ACTIVATION)
+//  Cek active sessions, tandai user yang
+//  baru pertama kali login → income masuk
+// ═══════════════════════════════════
+
+async function checkActivations() {
+  try {
+    const sessions = await mikrotik.getActiveSessions();
+    const inactiveUsers = database.getInactiveUsers();
+
+    if (inactiveUsers.length === 0 || sessions.length === 0) return [];
+
+    // Set of currently active usernames
+    const activeNames = new Set(sessions.map((s) => s.user));
+    const activated = [];
+
+    for (const user of inactiveUsers) {
+      if (activeNames.has(user.username)) {
+        const result = database.activateUser(user.username);
+        if (result) {
+          activated.push(result);
+        }
+      }
+    }
+
+    if (activated.length > 0) {
+      const totalIncome = activated.reduce((sum, u) => sum + (u.price || 0), 0);
+      console.log(`💰 ${activated.length} user baru login → +${totalIncome} income`);
+
+      // Notify admin
+      if (notifyFn && totalIncome > 0) {
+        let msg = `💰 <b>User Login Terdeteksi!</b>\n`;
+        msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        msg += `📅 ${now().format('DD MMM YYYY, HH:mm [WIB]')}\n\n`;
+
+        for (const u of activated) {
+          const p = getProfile(u.profile);
+          msg += `✅ <code>${u.username}</code> — ${p?.label || u.profile} (${formatCurrency(u.price || 0)})\n`;
+        }
+
+        msg += `\n💵 <b>+${formatCurrency(totalIncome)}</b>`;
+        msg += `\n━━━━━━━━━━━━━━━━━━━━━━━`;
+        await notifyFn(msg);
+      }
+    }
+
+    return activated;
+  } catch (error) {
+    console.error('⚠️  Activation check error:', error.message);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════
+//  2) AUTO-CLEANUP EXPIRED USERS
+//  Hapus user yang sudah melewati
+//  validity period
 // ═══════════════════════════════════
 
 async function cleanupExpiredUsers() {
@@ -73,8 +127,17 @@ async function cleanupExpiredUsers() {
       }
     }
   } catch (error) {
-    console.error('❌ Scheduler error:', error.message);
+    console.error('❌ Cleanup error:', error.message);
   }
+}
+
+// ═══════════════════════════════════
+//  MAIN SCHEDULER TICK
+// ═══════════════════════════════════
+
+async function schedulerTick() {
+  await checkActivations();
+  await cleanupExpiredUsers();
 }
 
 // ═══════════════════════════════════
@@ -84,12 +147,13 @@ async function cleanupExpiredUsers() {
 export function startScheduler(notifyCallback) {
   notifyFn = notifyCallback;
 
+  console.log('⏰ Scheduler started (activation check + auto-cleanup, interval: 1 hour)');
+
   // Run immediately on startup
-  console.log('⏰ Auto-cleanup scheduler started (interval: 1 hour)');
-  cleanupExpiredUsers();
+  schedulerTick();
 
   // Then every hour
-  schedulerTimer = setInterval(cleanupExpiredUsers, CHECK_INTERVAL);
+  schedulerTimer = setInterval(schedulerTick, CHECK_INTERVAL);
 }
 
 export function stopScheduler() {

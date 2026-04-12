@@ -50,6 +50,9 @@ export const database = {
       created_at: new Date().toISOString(),
       is_deleted: false,
       deleted_at: null,
+      // Income hanya dihitung saat user pertama login
+      activated: false,
+      activated_at: null,
     };
     db.users.push(entry);
     saveDB(db);
@@ -69,6 +72,8 @@ export const database = {
         created_at: new Date().toISOString(),
         is_deleted: false,
         deleted_at: null,
+        activated: false,
+        activated_at: null,
       };
       db.users.push(entry);
     }
@@ -83,6 +88,29 @@ export const database = {
       saveDB(db);
     }
   },
+
+  // ═══════════════════════════════════
+  //  ACTIVATION (user pertama kali login)
+  // ═══════════════════════════════════
+
+  activateUser(username) {
+    const user = db.users.find((u) => u.username === username && !u.activated && !u.is_deleted);
+    if (user) {
+      user.activated = true;
+      user.activated_at = new Date().toISOString();
+      saveDB(db);
+      return user;
+    }
+    return null;
+  },
+
+  getInactiveUsers() {
+    return db.users.filter((u) => !u.activated && !u.is_deleted);
+  },
+
+  // ═══════════════════════════════════
+  //  QUERIES
+  // ═══════════════════════════════════
 
   getRecentUsers(limit = 20) {
     return db.users
@@ -106,29 +134,31 @@ export const database = {
     const total_created = db.users.length;
     const active = db.users.filter((u) => !u.is_deleted).length;
     const deleted = db.users.filter((u) => u.is_deleted).length;
-    return { total_created, active, deleted };
+    const activated = db.users.filter((u) => u.activated).length;
+    const pending = db.users.filter((u) => !u.activated && !u.is_deleted).length;
+    return { total_created, active, deleted, activated, pending };
   },
 
   // ═══════════════════════════════════
-  //  INCOME TRACKING
+  //  INCOME TRACKING (hanya user yang sudah activated)
   // ═══════════════════════════════════
 
   getIncomeToday(todayStr) {
     return db.users
-      .filter((u) => u.created_at.startsWith(todayStr))
+      .filter((u) => u.activated && u.activated_at?.startsWith(todayStr))
       .reduce((sum, u) => sum + (u.price || 0), 0);
   },
 
   getIncomeByDateRange(startStr, endStr) {
     return db.users
-      .filter((u) => u.created_at >= startStr && u.created_at <= endStr)
+      .filter((u) => u.activated && u.activated_at >= startStr && u.activated_at <= endStr)
       .reduce((sum, u) => sum + (u.price || 0), 0);
   },
 
   getIncomeByProfile(startStr, endStr) {
     const result = {};
     db.users
-      .filter((u) => u.created_at >= startStr && u.created_at <= endStr)
+      .filter((u) => u.activated && u.activated_at >= startStr && u.activated_at <= endStr)
       .forEach((u) => {
         if (!result[u.profile]) {
           result[u.profile] = { count: 0, income: 0 };
@@ -140,12 +170,8 @@ export const database = {
   },
 
   getTotalIncome() {
-    return db.users.reduce((sum, u) => sum + (u.price || 0), 0);
-  },
-
-  getUsersCreatedBefore(dateStr) {
-    return db.users.filter(
-      (u) => !u.is_deleted && u.created_at < dateStr
-    );
+    return db.users
+      .filter((u) => u.activated)
+      .reduce((sum, u) => sum + (u.price || 0), 0);
   },
 };

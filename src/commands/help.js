@@ -15,7 +15,9 @@ async function showHelp(ctx) {
     `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
     `<b>📌 Command Tersedia:</b>\n\n` +
     `/start — Menu utama\n` +
-    `/adduser — Buat 1 user hotspot baru\n` +
+    `/adduser — Buat user (auto generate)\n` +
+    `/adduser <i>nama</i> — Buat user manual (user=pass)\n` +
+    `/adduser <i>user pass</i> — Custom user & pass\n` +
     `/voucher — Generate batch voucher\n` +
     `/listuser — Lihat semua user\n` +
     `/deleteuser — Hapus user\n` +

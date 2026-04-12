@@ -20,8 +20,8 @@ export function registerStart(bot) {
       `━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `Kelola user hotspot MikroTik\n` +
       `langsung dari Telegram.\n\n` +
-      `📡 Server: <code>${process.env.HOTSPOT_SERVER || 'hsprof1'}</code>\n` +
-      `🔗 Router: <code>${process.env.ROUTER_HOST || '10.10.10.2'}</code>\n\n` +
+      `🔗 Router: <code>${process.env.ROUTER_HOST || '10.10.10.2'}</code>\n` +
+      `⏰ Auto-cleanup: ON\n\n` +
       `Pilih menu di bawah atau ketik /help`,
       { parse_mode: 'HTML', reply_markup: keyboard }
     );

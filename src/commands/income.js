@@ -112,11 +112,13 @@ async function showIncomeMenu(ctx, isEdit = false) {
   const text =
     `💰 <b>Laporan Pendapatan</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📊 Total user dibuat : ${stats.total_created}\n` +
-    `✅ Aktif             : ${stats.active}\n` +
-    `🗑 Dihapus           : ${stats.deleted}\n` +
-    `💵 Total pendapatan  : ${formatCurrency(totalIncome)}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `📊 Total user dibuat  : ${stats.total_created}\n` +
+    `✅ Sudah login        : ${stats.activated}\n` +
+    `⏳ Belum login        : ${stats.pending}\n` +
+    `🗑 Dihapus/expired    : ${stats.deleted}\n` +
+    `💵 Total pendapatan   : ${formatCurrency(totalIncome)}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `<i>💡 Income dihitung saat user pertama login</i>\n\n` +
     `Pilih periode:`;
 
   if (isEdit) {

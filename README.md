@@ -9,21 +9,37 @@ Pengganti [MiHKMon](https://github.com/laksa19/mihkmon) yang sudah outdated dan 
 | Command | Deskripsi |
 |---------|-----------|
 | `/start` | Menu utama dengan inline keyboard |
-| `/adduser` | Buat 1 user hotspot baru (pilih profile → auto generate) |
+| `/adduser` | Buat user (auto generate username/password) |
+| `/adduser nama` | Buat user manual (username = password) |
+| `/adduser user pass` | Buat user dengan custom user & password |
 | `/voucher` | Generate batch voucher (3/5/10/20 sekaligus) |
 | `/listuser` | Lihat semua user dengan pagination |
 | `/deleteuser` | Hapus user + kick session aktif |
 | `/active` | Lihat user yang sedang online |
 | `/info` | Info server (CPU, RAM, uptime) |
+| `/income` | Laporan pendapatan (harian/mingguan/bulanan) |
 | `/help` | Panduan penggunaan |
 
 ### Highlight
 - 🔐 **Admin-only** — hanya Telegram ID tertentu yang bisa akses
 - 🔗 **WireGuard** — koneksi aman VPS ↔ MikroTik (support CGNAT)
 - ⚡ **REST API** — native RouterOS 7.x, tanpa library tambahan
-- 📊 **Logging** — semua user yang dibuat tercatat di database
+- 🧹 **Auto-cleanup** — user otomatis dihapus saat masa aktif habis
+- 💰 **Income tracking** — pendapatan dihitung saat user pertama kali login
 - 🎫 **Batch Voucher** — generate banyak user sekaligus
 - 📋 **Username = Password** — format simple, tinggal copy
+- 📊 **Manual & Auto** — bisa buat user custom atau auto generate
+
+## 💰 Harga Default
+
+| Profile | Harga | Masa Aktif | Speed |
+|---------|-------|------------|-------|
+| 1 Hari | Rp 3.000 | 1 hari | ↓10M / ↑3M |
+| 2 Hari | Rp 5.000 | 2 hari | ↓15M / ↑3M |
+| 7 Hari | Rp 15.000 | 7 hari | ↓20M / ↑4M |
+| Keluarga | Rp 50.000 | 30 hari | ↓20M / ↑5M |
+
+> Edit `src/utils.js` untuk menyesuaikan harga dan profile.
 
 ## 📋 Persyaratan
 
@@ -110,8 +126,8 @@ sudo systemctl enable --now wg-quick@wg0
 #### Aktifkan REST API di MikroTik
 
 ```
-# Enable www service (hanya allow dari WireGuard IP)
-/ip service set www address=10.10.10.1/32 disabled=no port=80
+# Enable www service (allow dari WireGuard + lokal)
+/ip service set www address=10.10.10.1/32,192.168.88.0/24 disabled=no port=80
 
 # Buat user khusus API
 /user add name=mikrobot password=PASSWORD_KUAT group=full
@@ -155,9 +171,6 @@ ROUTER_PORT=80
 ROUTER_USER=mikrobot
 ROUTER_PASS=your_password
 
-# Hotspot
-HOTSPOT_SERVER=hsprof1
-
 # Settings
 USERNAME_LENGTH=6
 TIMEZONE=Asia/Jakarta
@@ -171,7 +184,6 @@ TIMEZONE=Asia/Jakarta
 | `ROUTER_PORT` | Port REST API (default: 80) |
 | `ROUTER_USER` | Username API di MikroTik |
 | `ROUTER_PASS` | Password API |
-| `HOTSPOT_SERVER` | Nama hotspot server di MikroTik |
 | `USERNAME_LENGTH` | Panjang username yang di-generate (default: 6) |
 | `TIMEZONE` | Timezone untuk format tanggal |
 
@@ -193,10 +205,16 @@ pm2 save
 ## 📱 Cara Pakai
 
 ### Tambah User
+
+**Auto generate:**
 1. Kirim `/adduser` atau tap "➕ Tambah User" di menu
 2. Pilih profile (1 Hari, 2 Hari, 7 Hari, Keluarga)
 3. Bot auto-generate username & password (format: `abc123` / `abc123`)
-4. Copy username/password, berikan ke customer
+
+**Manual username:**
+1. Kirim `/adduser nama` → username=password=nama
+2. Atau `/adduser user pass` → custom username & password
+3. Pilih profile, selesai!
 
 ### Generate Voucher
 1. Kirim `/voucher`
@@ -209,9 +227,19 @@ pm2 save
 - Atau langsung: `/deleteuser username123`
 - User yang sedang online akan di-kick otomatis
 
-## 🔧 Kustomisasi Profile
+### Laporan Pendapatan
+- Kirim `/income` → pilih periode (hari ini, minggu ini, bulan ini, atau total)
+- Income **hanya dihitung saat user pertama kali login** ke hotspot
+- Breakdown per profile: jumlah × harga
 
-Edit file `src/utils.js` untuk menyesuaikan profile hotspot:
+### Auto-Cleanup
+- Bot cek setiap **1 jam** apakah ada user yang masa aktifnya sudah habis
+- User expired otomatis **di-kick + dihapus** dari MikroTik
+- Admin mendapat **notifikasi** di Telegram setiap kali ada user yang dihapus
+
+## 🔧 Kustomisasi Profile & Harga
+
+Edit file `src/utils.js`:
 
 ```js
 export const PROFILES = {
@@ -220,12 +248,14 @@ export const PROFILES = {
     label: '1 Hari',
     'session-timeout': '1d 00:00:00',
     'rate-limit': '3M/10M',
+    price: 3000,        // Harga dalam Rupiah
+    validityDays: 1,    // Masa aktif (hari)
   },
   // Tambah profile baru di sini...
 };
 ```
 
-> Profile harus **sama persis** dengan nama user profile di MikroTik.
+> ⚠️ Nama profile (`name`) harus **sama persis** dengan user-profile di MikroTik.
 
 ## 🏗 Arsitektur
 
@@ -235,8 +265,17 @@ export const PROFILES = {
 │ (Telegram)   │────▶│  MikroBot (Node)  │────▶│  RouterOS 7  │
 │              │◀────│  Grammy + Axios   │◀────│  REST API    │
 └──────────────┘     │  WireGuard Client │     │  WireGuard   │
-                     └───────────────────┘     └──────────────┘
+                     │  ⏰ Scheduler      │     └──────────────┘
+                     └───────────────────┘
                       10.10.10.1                10.10.10.2
+```
+
+### Alur Income
+```
+User dibuat → Belum login (income: 0)
+           → Pertama login ke hotspot
+           → Scheduler deteksi di active sessions
+           → Income tercatat ✅
 ```
 
 ## 📁 Struktur Project
@@ -252,16 +291,18 @@ mikrobot/
 │   ├── bot.js            # Grammy bot + admin middleware
 │   ├── config.js         # Environment config
 │   ├── mikrotik.js       # MikroTik REST API client
-│   ├── database.js       # JSON-based logging
-│   ├── utils.js          # Helpers + profile definitions
+│   ├── database.js       # JSON-based logging + income tracking
+│   ├── scheduler.js      # Auto-cleanup + activation checker
+│   ├── utils.js          # Helpers + profile/price definitions
 │   └── commands/
 │       ├── start.js      # /start
-│       ├── adduser.js    # /adduser
+│       ├── adduser.js    # /adduser (auto & manual)
 │       ├── voucher.js    # /voucher
 │       ├── listuser.js   # /listuser
 │       ├── deleteuser.js # /deleteuser
 │       ├── activeuser.js # /active
 │       ├── serverinfo.js # /info
+│       ├── income.js     # /income
 │       └── help.js       # /help
 └── data/
     └── mikrobot.json     # Database (auto-created)

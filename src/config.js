@@ -20,7 +20,7 @@ export const config = {
     pass: process.env.ROUTER_PASS || '',
   },
 
-  hotspotServer: process.env.HOTSPOT_SERVER || 'hsprof1',
+
   usernameLength: Number(process.env.USERNAME_LENGTH) || 6,
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',
 };

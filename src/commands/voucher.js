@@ -1,7 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import { mikrotik } from '../mikrotik.js';
 import { database } from '../database.js';
-import { config } from '../config.js';
+
 import {
   generateCode, formatDate, formatSpeed, formatSessionTimeout, now,
   getProfileList, getProfile, formatCurrency,
