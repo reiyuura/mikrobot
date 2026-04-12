@@ -1,0 +1,20 @@
+{
+  "name": "mikrobot",
+  "version": "1.0.0",
+  "description": "Telegram Bot untuk Manajemen Hotspot MikroTik via REST API",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": ["mikrotik", "hotspot", "telegram", "bot"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "grammy": "^1.35.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "dayjs": "^1.11.0"
+  }
+}
