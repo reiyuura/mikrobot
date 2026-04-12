@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="pragma" content="no-cache">
+  <meta http-equiv="expires" content="-1">
+  <title>WiFi Login — $(identity)</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a1a;
+      background-image:
+        radial-gradient(ellipse at 20% 50%, rgba(88, 86, 214, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(0, 194, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 80%, rgba(167, 59, 255, 0.08) 0%, transparent 50%);
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    /* Animated background orbs */
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.4;
+      animation: float 8s ease-in-out infinite;
+      z-index: 0;
+    }
+
+    body::before {
+      width: 300px;
+      height: 300px;
+      background: rgba(88, 86, 214, 0.3);
+      top: -100px;
+      left: -50px;
+    }
+
+    body::after {
+      width: 250px;
+      height: 250px;
+      background: rgba(0, 194, 255, 0.2);
+      bottom: -80px;
+      right: -50px;
+      animation-delay: -4s;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-30px) scale(1.05); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      padding: 40px 32px;
+      box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    /* ══════ LOGO ══════ */
+    .logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .logo-icon {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, #5856d6, #00c2ff);
+      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 32px rgba(88, 86, 214, 0.3);
+    }
+
+    .logo-icon svg {
+      width: 32px;
+      height: 32px;
+      fill: white;
+    }
+
+    .logo h1 {
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .logo p {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 13px;
+      margin-top: 6px;
+      font-weight: 400;
+    }
+
+    /* ══════ TABS ══════ */
+    .tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 14px;
+      padding: 4px;
+      margin-bottom: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px 8px;
+      background: transparent;
+      border: none;
+      border-radius: 11px;
+      color: rgba(255, 255, 255, 0.35);
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .tab-btn.active {
+      background: rgba(88, 86, 214, 0.25);
+      color: white;
+      box-shadow: 0 2px 12px rgba(88, 86, 214, 0.2);
+    }
+
+    .tab-btn:not(.active):hover {
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tab-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+
+    /* ══════ TAB CONTENT ══════ */
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ══════ ERROR ══════ */
+    .error-msg {
+      background: rgba(255, 59, 48, 0.1);
+      border: 1px solid rgba(255, 59, 48, 0.2);
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: #ff6b6b;
+      font-size: 13px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    /* ══════ FORM ══════ */
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    .input-wrapper .icon {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      fill: rgba(255, 255, 255, 0.25);
+      pointer-events: none;
+      transition: fill 0.3s;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 14px 16px 14px 48px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      color: #ffffff;
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.3s ease;
+    }
+
+    .form-group input::placeholder {
+      color: rgba(255, 255, 255, 0.2);
+    }
+
+    .form-group input:focus {
+      border-color: rgba(88, 86, 214, 0.5);
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 0 0 3px rgba(88, 86, 214, 0.15);
+    }
+
+    .form-group input:focus ~ .icon {
+      fill: rgba(88, 86, 214, 0.8);
+    }
+
+    .voucher-hint {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.25);
+      font-size: 12px;
+      margin-top: -8px;
+      margin-bottom: 16px;
+    }
+
+    /* ══════ BUTTON ══════ */
+    .btn-login {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #5856d6, #7c5ce7);
+      border: none;
+      border-radius: 14px;
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-login::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+      transition: left 0.5s;
+    }
+
+    .btn-login:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(88, 86, 214, 0.4);
+    }
+
+    .btn-login:hover::before {
+      left: 100%;
+    }
+
+    .btn-login:active {
+      transform: translateY(0);
+    }
+
+    /* ══════ FOOTER ══════ */
+    .footer {
+      text-align: center;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .footer p {
+      color: rgba(255, 255, 255, 0.25);
+      font-size: 11px;
+    }
+
+    .footer .identity {
+      color: rgba(255, 255, 255, 0.4);
+      font-weight: 500;
+    }
+
+    /* ══════ RESPONSIVE ══════ */
+    @media (max-width: 480px) {
+      .card {
+        padding: 32px 24px;
+        border-radius: 20px;
+      }
+    }
+
+    /* ══════ LOADING ══════ */
+    .btn-login.loading {
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    .btn-login.loading::after {
+      content: '';
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+
+      <!-- Logo -->
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+          </svg>
+        </div>
+        <h1>WiFi Hotspot</h1>
+        <p>Masukkan kode voucher atau login manual</p>
+      </div>
+
+      <!-- Error -->
+      $(if error)
+      <div class="error-msg">⚠️ $(error)</div>
+      $(endif)
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('voucher')" id="tab-voucher">
+          <svg viewBox="0 0 24 24"><path d="M22 10V6c0-1.11-.9-2-2-2H4c-1.1 0-1.99.89-1.99 2v4c1.1 0 1.99.9 1.99 2s-.89 2-2 2v4c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2v-4c-1.1 0-2-.9-2-2s.9-2 2-2zm-2-1.46c-1.19.69-2 1.99-2 3.46s.81 2.77 2 3.46V18H4v-2.54c1.19-.69 2-1.99 2-3.46 0-1.48-.8-2.77-1.99-3.46L4 6h16v2.54z"/></svg>
+          Voucher
+        </button>
+        <button class="tab-btn" onclick="switchTab('manual')" id="tab-manual">
+          <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+          Login Manual
+        </button>
+      </div>
+
+      <!-- ═══ TAB 1: VOUCHER (1 field) ═══ -->
+      <div class="tab-content active" id="content-voucher">
+        <form name="voucher" action="$(link-login-only)" method="post"
+          $(if chap-id) onsubmit="return doVoucher()" $(endif)>
+          <input type="hidden" name="dst" value="$(link-orig)">
+          <input type="hidden" name="popup" value="true">
+          <input type="hidden" name="password" id="voucher-pass" value="">
+
+          <div class="form-group">
+            <label>Kode Voucher</label>
+            <div class="input-wrapper">
+              <input type="text" id="voucher-code" placeholder="Masukkan kode voucher"
+                autocomplete="off" autocapitalize="none" autofocus required>
+              <svg class="icon" viewBox="0 0 24 24">
+                <path d="M22 10V6c0-1.11-.9-2-2-2H4c-1.1 0-1.99.89-1.99 2v4c1.1 0 1.99.9 1.99 2s-.89 2-2 2v4c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2v-4c-1.1 0-2-.9-2-2s.9-2 2-2zm-9 5.5h-2v-2h2v2zm0-3.5h-2v-2h2v2zm0-3.5h-2v-2h2v2z"/>
+              </svg>
+            </div>
+          </div>
+
+          <p class="voucher-hint">Kode voucher = username & password</p>
+
+          <!-- Hidden username field — will be filled by JS -->
+          <input type="hidden" name="username" id="voucher-user" value="">
+
+          <button type="submit" class="btn-login" onclick="this.classList.add('loading')">
+            🎫 Gunakan Voucher
+          </button>
+        </form>
+      </div>
+
+      <!-- ═══ TAB 2: MANUAL (2 fields) ═══ -->
+      <div class="tab-content" id="content-manual">
+        <form name="login" action="$(link-login-only)" method="post"
+          $(if chap-id) onsubmit="return doLogin()" $(endif)>
+          <input type="hidden" name="dst" value="$(link-orig)">
+          <input type="hidden" name="popup" value="true">
+
+          <div class="form-group">
+            <label>Username</label>
+            <div class="input-wrapper">
+              <input type="text" name="username" placeholder="Masukkan username"
+                value="$(username)" autocomplete="username" required>
+              <svg class="icon" viewBox="0 0 24 24">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              </svg>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Password</label>
+            <div class="input-wrapper">
+              <input type="password" name="password" placeholder="Masukkan password"
+                autocomplete="current-password" required>
+              <svg class="icon" viewBox="0 0 24 24">
+                <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+              </svg>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-login" onclick="this.classList.add('loading')">
+            🔐 Login
+          </button>
+        </form>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <p>🔗 <span class="identity">$(identity)</span></p>
+        <p style="margin-top:4px">Powered by MikroBot</p>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ═══ TAB SWITCHING ═══
+    function switchTab(tab) {
+      // Toggle tab buttons
+      document.getElementById('tab-voucher').classList.toggle('active', tab === 'voucher');
+      document.getElementById('tab-manual').classList.toggle('active', tab === 'manual');
+
+      // Toggle content
+      document.getElementById('content-voucher').classList.toggle('active', tab === 'voucher');
+      document.getElementById('content-manual').classList.toggle('active', tab === 'manual');
+
+      // Focus the first input
+      if (tab === 'voucher') {
+        document.getElementById('voucher-code').focus();
+      } else {
+        document.querySelector('#content-manual input[name="username"]').focus();
+      }
+    }
+
+    // ═══ VOUCHER: copy code to both username & password ═══
+    function doVoucher() {
+      var code = document.getElementById('voucher-code').value.trim();
+      if (!code) return false;
+
+      document.getElementById('voucher-user').value = code;
+
+      $(if chap-id)
+      // CHAP: MD5 hash the password
+      document.getElementById('voucher-pass').value = hexMD5('$(chap-id)' + code + '$(chap-challenge)');
+      $(endif)
+
+      $(if !chap-id)
+      // PAP: plain text
+      document.getElementById('voucher-pass').value = code;
+      $(endif)
+
+      return true;
+    }
+
+    $(if chap-id)
+    // ═══ MANUAL LOGIN: CHAP MD5 ═══
+    function doLogin() {
+      document.login.password.value = hexMD5('$(chap-id)' + document.login.password.value + '$(chap-challenge)');
+      return true;
+    }
+    $(endif)
+  </script>
+
+  $(if chap-id)
+  <script src="/md5.js"></script>
+  $(endif)
+</body>
+</html>

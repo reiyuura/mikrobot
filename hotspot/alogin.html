@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login Berhasil — $(identity)</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a1a;
+      background-image:
+        radial-gradient(ellipse at 20% 50%, rgba(52, 199, 89, 0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(0, 194, 255, 0.08) 0%, transparent 50%);
+      padding: 20px;
+    }
+
+    .container { width: 100%; max-width: 420px; }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      padding: 40px 32px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      text-align: center;
+    }
+
+    .success-icon {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #34c759, #30d158);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 32px rgba(52, 199, 89, 0.3);
+      animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0); }
+      100% { transform: scale(1); }
+    }
+
+    .success-icon svg {
+      width: 40px;
+      height: 40px;
+      fill: white;
+    }
+
+    h1 {
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+
+    .subtitle strong {
+      color: white;
+    }
+
+    /* ══════ INFO GRID ══════ */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .info-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .info-item .label {
+      color: rgba(255, 255, 255, 0.35);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .info-item .value {
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    /* ══════ SESSION INFO ══════ */
+    .session-info {
+      background: linear-gradient(135deg, rgba(52, 199, 89, 0.1), rgba(0, 194, 255, 0.08));
+      border: 1px solid rgba(52, 199, 89, 0.12);
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 24px;
+    }
+
+    .session-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+    }
+
+    .session-row .key {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 12px;
+    }
+
+    .session-row .val {
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #34c759;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #34c759;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ══════ BUTTONS ══════ */
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: center;
+      text-decoration: none;
+      border: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #5856d6, #7c5ce7);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(88, 86, 214, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-logout {
+      background: transparent;
+      color: rgba(255, 59, 48, 0.6);
+      font-size: 13px;
+      padding: 10px;
+    }
+
+    .btn-logout:hover {
+      color: rgba(255, 59, 48, 0.9);
+    }
+
+    /* ══════ FOOTER ══════ */
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .footer p {
+      color: rgba(255, 255, 255, 0.2);
+      font-size: 11px;
+    }
+
+    @media (max-width: 480px) {
+      .card { padding: 32px 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+
+      <div class="success-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+        </svg>
+      </div>
+
+      <h1>Terhubung! 🎉</h1>
+      <p class="subtitle">Selamat menikmati internet, <strong>$(username)</strong></p>
+
+      <!-- Connection Info -->
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="label">IP Address</div>
+          <div class="value">$(ip)</div>
+        </div>
+        <div class="info-item">
+          <div class="label">MAC Address</div>
+          <div class="value">$(mac)</div>
+        </div>
+      </div>
+
+      <!-- Session Status -->
+      <div class="session-info">
+        <div class="session-row">
+          <span class="key">Status</span>
+          <span class="status-badge">
+            <span class="status-dot"></span>
+            Online
+          </span>
+        </div>
+        <div class="session-row">
+          <span class="key">Sisa Waktu</span>
+          <span class="val">$(session-time-left)</span>
+        </div>
+        <div class="session-row">
+          <span class="key">Download</span>
+          <span class="val">$(bytes-in-nice)</span>
+        </div>
+        <div class="session-row">
+          <span class="key">Upload</span>
+          <span class="val">$(bytes-out-nice)</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <a href="$(link-orig)" class="btn btn-primary">🌐 Mulai Browsing</a>
+        <a href="$(link-status)" class="btn btn-secondary">📊 Lihat Status</a>
+        <a href="$(link-logout)" class="btn btn-logout">🚪 Logout</a>
+      </div>
+
+      <div class="footer">
+        <p>🔗 $(identity) • Powered by MikroBot</p>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
