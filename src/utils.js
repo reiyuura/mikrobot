@@ -7,6 +7,46 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 // ═══════════════════════════════════
+//  HARDCODED PROFILES (fallback)
+//  Update ini sesuai profile di MikroTik kamu
+// ═══════════════════════════════════
+
+export const PROFILES = {
+  '1hari': {
+    name: '1hari',
+    label: '1 Hari',
+    'session-timeout': '1d 00:00:00',
+    'rate-limit': '3M/10M',
+  },
+  '2hari': {
+    name: '2hari',
+    label: '2 Hari',
+    'session-timeout': '',
+    'rate-limit': '3M/15M',
+  },
+  '7hari': {
+    name: '7hari',
+    label: '7 Hari',
+    'session-timeout': '7d 00:00:00',
+    'rate-limit': '4M/20M',
+  },
+  'keluarga': {
+    name: 'keluarga',
+    label: 'Keluarga',
+    'session-timeout': '',
+    'rate-limit': '5M/20M',
+  },
+};
+
+export function getProfileList() {
+  return Object.values(PROFILES);
+}
+
+export function getProfile(name) {
+  return PROFILES[name] || null;
+}
+
+// ═══════════════════════════════════
 //  USERNAME GENERATOR
 // ═══════════════════════════════════
 
@@ -44,7 +84,7 @@ export function formatDateShort(date) {
 export function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   const num = Number(bytes);
-  if (isNaN(num)) return bytes;
+  if (isNaN(num)) return String(bytes);
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(num) / Math.log(k));
@@ -65,7 +105,6 @@ export function formatSpeed(rateLimit) {
 
 export function formatSessionTimeout(timeout) {
   if (!timeout || timeout === '00:00:00' || timeout === 'none') return 'Unlimited';
-  // Parse MikroTik format like "1d 00:00:00" or "7d 00:00:00"
   const match = timeout.match(/(?:(\d+)w)?(?:(\d+)d)?(?:\s*(\d+):(\d+):(\d+))?/);
   if (!match) return timeout;
   const weeks = parseInt(match[1]) || 0;
@@ -85,17 +124,6 @@ export function escapeHtml(text) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-}
-
-export function profileLabel(name) {
-  const labels = {
-    '1hari': '1 Hari',
-    '2hari': '2 Hari',
-    '7hari': '7 Hari',
-    'keluarga': 'Keluarga',
-    'default': 'Default',
-  };
-  return labels[name] || name;
 }
 
 export function formatMemory(free, total) {

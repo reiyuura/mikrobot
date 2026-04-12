@@ -18,7 +18,8 @@ class MikroTikAPI {
       (response) => response,
       (error) => {
         if (error.response?.data) {
-          const msg = error.response.data.message || error.response.data.detail || 'Unknown error';
+          const errData = error.response.data;
+          const msg = errData.message || errData.detail || JSON.stringify(errData);
           throw new Error(`MikroTik: ${msg}`);
         }
         if (error.code === 'ECONNREFUSED') {
@@ -47,7 +48,8 @@ class MikroTikAPI {
   }
 
   async addUser({ name, password, profile, server, comment }) {
-    const { data } = await this.client.put('/ip/hotspot/user', {
+    // Use POST command-style (more compatible across RouterOS versions)
+    const { data } = await this.client.post('/ip/hotspot/user/add', {
       name,
       password,
       profile,
@@ -58,7 +60,11 @@ class MikroTikAPI {
   }
 
   async removeUser(id) {
-    await this.client.delete(`/ip/hotspot/user/${id}`);
+    // Use POST command-style for removal
+    const { data } = await this.client.post('/ip/hotspot/user/remove', {
+      '.id': id,
+    });
+    return data;
   }
 
   // ═══════════════════════════════════
@@ -66,8 +72,24 @@ class MikroTikAPI {
   // ═══════════════════════════════════
 
   async getUserProfiles() {
-    const { data } = await this.client.get('/ip/hotspot/user-profile');
-    return data;
+    // Try multiple possible endpoints (varies by RouterOS version)
+    const endpoints = [
+      '/ip/hotspot/user/profile',
+      '/ip/hotspot/user-profile',
+      '/ip/hotspot/profile',
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const { data } = await this.client.get(endpoint);
+        return data;
+      } catch {
+        continue;
+      }
+    }
+
+    // If all fail, return null (caller should use fallback)
+    return null;
   }
 
   // ═══════════════════════════════════
@@ -80,7 +102,9 @@ class MikroTikAPI {
   }
 
   async kickUser(id) {
-    await this.client.delete(`/ip/hotspot/active/${id}`);
+    await this.client.post('/ip/hotspot/active/remove', {
+      '.id': id,
+    });
   }
 
   // ═══════════════════════════════════

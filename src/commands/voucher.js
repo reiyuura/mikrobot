@@ -2,7 +2,22 @@ import { InlineKeyboard } from 'grammy';
 import { mikrotik } from '../mikrotik.js';
 import { database } from '../database.js';
 import { config } from '../config.js';
-import { generateCode, formatDate, formatSpeed, formatSessionTimeout, now } from '../utils.js';
+import {
+  generateCode, formatDate, formatSpeed, formatSessionTimeout, now,
+  getProfileList, getProfile,
+} from '../utils.js';
+
+// ═══════════════════════════════════
+//  GET PROFILES (API or fallback)
+// ═══════════════════════════════════
+
+async function fetchProfiles() {
+  const apiProfiles = await mikrotik.getUserProfiles();
+  if (apiProfiles && apiProfiles.length > 0) {
+    return apiProfiles;
+  }
+  return getProfileList();
+}
 
 // ═══════════════════════════════════
 //  SHOW PROFILE SELECTION
@@ -10,7 +25,7 @@ import { generateCode, formatDate, formatSpeed, formatSessionTimeout, now } from
 
 async function showVoucherProfiles(ctx) {
   try {
-    const profiles = await mikrotik.getUserProfiles();
+    const profiles = await fetchProfiles();
 
     const keyboard = new InlineKeyboard();
     let count = 0;
@@ -19,7 +34,10 @@ async function showVoucherProfiles(ctx) {
       if (profile.name === 'default') continue;
 
       const speed = formatSpeed(profile['rate-limit']);
-      keyboard.text(`${profile.name} (${speed.display})`, `voucher:profile:${profile.name}`);
+      keyboard.text(
+        `${profile.label || profile.name} (${speed.display})`,
+        `voucher:profile:${profile.name}`
+      );
 
       count++;
       if (count % 2 === 0) keyboard.row();
@@ -34,7 +52,10 @@ async function showVoucherProfiles(ctx) {
       { parse_mode: 'HTML', reply_markup: keyboard }
     );
   } catch (error) {
-    await ctx.reply(`❌ Gagal mengambil data profile:\n<code>${error.message}</code>`, { parse_mode: 'HTML' });
+    await ctx.reply(
+      `❌ Gagal mengambil data profile:\n<code>${error.message}</code>`,
+      { parse_mode: 'HTML' }
+    );
   }
 }
 
@@ -65,6 +86,9 @@ export function registerVoucher(bot) {
     const profile = ctx.match[1];
     await ctx.answerCallbackQuery();
 
+    const profileData = getProfile(profile);
+    const label = profileData?.label || profile;
+
     const keyboard = new InlineKeyboard()
       .text('3 Voucher', `voucher:gen:${profile}:3`)
       .text('5 Voucher', `voucher:gen:${profile}:5`)
@@ -75,7 +99,7 @@ export function registerVoucher(bot) {
       .text('❌ Batal', 'voucher:cancel');
 
     await ctx.editMessageText(
-      `🎫 <b>Generate Voucher — ${profile}</b>\n\n` +
+      `🎫 <b>Generate Voucher — ${label}</b>\n\n` +
       `Pilih jumlah voucher:`,
       { parse_mode: 'HTML', reply_markup: keyboard }
     );
@@ -118,10 +142,10 @@ export function registerVoucher(bot) {
       database.logBatchUsers(dbEntries);
 
       // Get profile info
-      const profiles = await mikrotik.getUserProfiles();
-      const profileData = profiles.find((p) => p.name === profileName);
+      const profileData = getProfile(profileName);
       const speed = formatSpeed(profileData?.['rate-limit']);
       const duration = formatSessionTimeout(profileData?.['session-timeout']);
+      const label = profileData?.label || profileName;
 
       // Build voucher list
       let voucherList = '';
@@ -130,7 +154,7 @@ export function registerVoucher(bot) {
       });
 
       await ctx.editMessageText(
-        `🎫 <b>Voucher Hotspot — ${profileName}</b>\n` +
+        `🎫 <b>Voucher Hotspot — ${label}</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `⚡ Speed  : ${speed.display}\n` +
         `⏱ Durasi : ${duration}\n` +

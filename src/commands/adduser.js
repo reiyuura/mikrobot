@@ -2,7 +2,23 @@ import { InlineKeyboard } from 'grammy';
 import { mikrotik } from '../mikrotik.js';
 import { database } from '../database.js';
 import { config } from '../config.js';
-import { generateCode, formatDate, formatSpeed, formatSessionTimeout, now } from '../utils.js';
+import {
+  generateCode, formatDate, formatSpeed, formatSessionTimeout, now,
+  getProfileList, getProfile,
+} from '../utils.js';
+
+// ═══════════════════════════════════
+//  GET PROFILES (API or fallback)
+// ═══════════════════════════════════
+
+async function fetchProfiles() {
+  // Try API first, fallback to hardcoded
+  const apiProfiles = await mikrotik.getUserProfiles();
+  if (apiProfiles && apiProfiles.length > 0) {
+    return apiProfiles;
+  }
+  return getProfileList();
+}
 
 // ═══════════════════════════════════
 //  SHOW PROFILE SELECTION
@@ -10,7 +26,7 @@ import { generateCode, formatDate, formatSpeed, formatSessionTimeout, now } from
 
 async function showProfileSelection(ctx) {
   try {
-    const profiles = await mikrotik.getUserProfiles();
+    const profiles = await fetchProfiles();
 
     const keyboard = new InlineKeyboard();
     let count = 0;
@@ -19,7 +35,7 @@ async function showProfileSelection(ctx) {
       if (profile.name === 'default') continue;
 
       const speed = formatSpeed(profile['rate-limit']);
-      const label = `${profile.name} (${speed.display})`;
+      const label = `${profile.label || profile.name} (${speed.display})`;
       keyboard.text(label, `adduser:${profile.name}`);
 
       count++;
@@ -35,7 +51,10 @@ async function showProfileSelection(ctx) {
       { parse_mode: 'HTML', reply_markup: keyboard }
     );
   } catch (error) {
-    await ctx.reply(`❌ Gagal mengambil data profile:\n<code>${error.message}</code>`, { parse_mode: 'HTML' });
+    await ctx.reply(
+      `❌ Gagal mengambil data profile:\n<code>${error.message}</code>`,
+      { parse_mode: 'HTML' }
+    );
   }
 }
 
@@ -83,9 +102,8 @@ export function registerAddUser(bot) {
       // Log to database
       database.logUser(code, profileName, config.hotspotServer, ctx.from.id, ctx.from.first_name);
 
-      // Get profile details for display
-      const profiles = await mikrotik.getUserProfiles();
-      const profileData = profiles.find((p) => p.name === profileName);
+      // Get profile details for display (from hardcoded or API)
+      const profileData = getProfile(profileName);
       const speed = formatSpeed(profileData?.['rate-limit']);
       const duration = formatSessionTimeout(profileData?.['session-timeout']);
 
@@ -95,7 +113,7 @@ export function registerAddUser(bot) {
         `👤 Username : <code>${code}</code>\n` +
         `🔑 Password : <code>${code}</code>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📋 Profile  : ${profileName}\n` +
+        `📋 Profile  : ${profileData?.label || profileName}\n` +
         `⚡ Speed    : ${speed.display}\n` +
         `⏱ Durasi   : ${duration}\n` +
         `🖥 Server   : ${config.hotspotServer}\n` +
