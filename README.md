@@ -202,6 +202,29 @@ pm2 startup
 pm2 save
 ```
 
+### 5. WireGuard Watchdog (Recommended)
+
+Kalau ISP pakai **CGNAT**, IP publik MikroTik bisa berubah setelah mati listrik/reboot. Pasang watchdog agar tunnel auto-recover:
+
+```bash
+# Copy script
+sudo cp scripts/wg-watchdog.sh /opt/wg-watchdog.sh
+sudo chmod +x /opt/wg-watchdog.sh
+
+# Test
+sudo /opt/wg-watchdog.sh
+
+# Pasang cron (cek setiap 5 menit)
+sudo crontab -e
+```
+
+Tambahkan baris ini:
+```
+*/5 * * * * /opt/wg-watchdog.sh
+```
+
+> 📋 Log watchdog bisa dilihat di `/var/log/wg-watchdog.log`
+
 ## 📱 Cara Pakai
 
 ### Tambah User
@@ -286,26 +309,36 @@ mikrobot/
 ├── .env.example
 ├── .gitignore
 ├── README.md
+├── scripts/
+│   └── wg-watchdog.sh    # Auto-recovery WireGuard tunnel
+├── hotspot/               # Template login MikroTik
+│   ├── login.html         # Login (2 tab: Voucher + Manual)
+│   ├── alogin.html        # After login + status
+│   ├── status.html        # Status koneksi
+│   ├── logout.html        # Logout + summary
+│   ├── error.html         # Error page
+│   ├── redirect.html      # Redirect page
+│   └── md5.js             # CHAP authentication
 ├── src/
-│   ├── index.js          # Entry point
-│   ├── bot.js            # Grammy bot + admin middleware
-│   ├── config.js         # Environment config
-│   ├── mikrotik.js       # MikroTik REST API client
-│   ├── database.js       # JSON-based logging + income tracking
-│   ├── scheduler.js      # Auto-cleanup + activation checker
-│   ├── utils.js          # Helpers + profile/price definitions
+│   ├── index.js           # Entry point
+│   ├── bot.js             # Grammy bot + admin middleware
+│   ├── config.js          # Environment config
+│   ├── mikrotik.js        # MikroTik REST API client
+│   ├── database.js        # JSON-based logging + income tracking
+│   ├── scheduler.js       # Auto-cleanup + activation checker
+│   ├── utils.js           # Helpers + profile/price definitions
 │   └── commands/
-│       ├── start.js      # /start
-│       ├── adduser.js    # /adduser (auto & manual)
-│       ├── voucher.js    # /voucher
-│       ├── listuser.js   # /listuser
-│       ├── deleteuser.js # /deleteuser
-│       ├── activeuser.js # /active
-│       ├── serverinfo.js # /info
-│       ├── income.js     # /income
-│       └── help.js       # /help
+│       ├── start.js       # /start
+│       ├── adduser.js     # /adduser (auto & manual)
+│       ├── voucher.js     # /voucher
+│       ├── listuser.js    # /listuser
+│       ├── deleteuser.js  # /deleteuser
+│       ├── activeuser.js  # /active
+│       ├── serverinfo.js  # /info
+│       ├── income.js      # /income
+│       └── help.js        # /help
 └── data/
-    └── mikrobot.json     # Database (auto-created)
+    └── mikrobot.json      # Database (auto-created)
 ```
 
 ## 🔐 Keamanan
@@ -314,6 +347,7 @@ mikrobot/
 - Hanya admin (by Telegram ID) yang bisa mengakses bot
 - Semua traffic terenkripsi melalui WireGuard tunnel
 - Gunakan user API terpisah di MikroTik (jangan pakai admin)
+- WireGuard watchdog auto-recovery jika tunnel putus (CGNAT)
 
 ## 📄 Lisensi
 
