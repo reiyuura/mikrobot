@@ -18,6 +18,7 @@ Pengganti [MiHKMon](https://github.com/laksa19/mihkmon) yang sudah outdated dan 
 | `/active` | Lihat user yang sedang online |
 | `/info` | Info server (CPU, RAM, uptime) |
 | `/income` | Laporan pendapatan (harian/mingguan/bulanan) |
+| `/reboot` | Reboot MikroTik (dengan konfirmasi) |
 | `/help` | Panduan penggunaan |
 
 ### Highlight
@@ -29,6 +30,8 @@ Pengganti [MiHKMon](https://github.com/laksa19/mihkmon) yang sudah outdated dan 
 - 🎫 **Batch Voucher** — generate banyak user sekaligus
 - 📋 **Username = Password** — format simple, tinggal copy
 - 📊 **Manual & Auto** — bisa buat user custom atau auto generate
+- 🌐 **WebFig Proxy** — akses MikroTik WebFig dari mana saja via HTTPS
+- 🔄 **Reboot** — restart router dari Telegram dengan auto status check
 
 ## 💰 Harga Default
 
@@ -336,6 +339,7 @@ mikrobot/
 │       ├── activeuser.js  # /active
 │       ├── serverinfo.js  # /info
 │       ├── income.js      # /income
+│       ├── reboot.js      # /reboot
 │       └── help.js        # /help
 └── data/
     └── mikrobot.json      # Database (auto-created)
@@ -348,6 +352,94 @@ mikrobot/
 - Semua traffic terenkripsi melalui WireGuard tunnel
 - Gunakan user API terpisah di MikroTik (jangan pakai admin)
 - WireGuard watchdog auto-recovery jika tunnel putus (CGNAT)
+
+## 🌐 WebFig Reverse Proxy (Opsional)
+
+Akses MikroTik WebFig dari mana saja melalui domain HTTPS, tanpa perlu expose port router langsung.
+
+### Cara Kerja
+
+```
+Browser → https://mikro.domain.com → Nginx (VPS) → WireGuard → MikroTik WebFig (10.10.10.2:80)
+```
+
+### Setup
+
+#### 1. DNS Record
+
+Tambahkan A record di DNS provider:
+
+```
+mikro.domain.com → IP_VPS
+```
+
+> Jika pakai Cloudflare, set **DNS Only** (grey cloud) agar SSL certbot bisa jalan.
+
+#### 2. Nginx Config
+
+```bash
+sudo nano /etc/nginx/sites-available/mikro-webfig
+```
+
+```nginx
+server {
+    listen 80;
+    server_name mikro.domain.com;
+
+    # Basic auth (wajib! jangan expose WebFig tanpa password)
+    auth_basic "MikroTik WebFig";
+    auth_basic_user_file /etc/nginx/.htpasswd-mikro;
+
+    location / {
+        proxy_pass http://10.10.10.2/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support (untuk WebFig terminal)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+```bash
+# Enable site
+sudo ln -s /etc/nginx/sites-available/mikro-webfig /etc/nginx/sites-enabled/
+
+# Buat password file
+sudo apt install apache2-utils -y
+sudo htpasswd -c /etc/nginx/.htpasswd-mikro admin
+
+# Test & reload
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+#### 3. SSL (Let's Encrypt)
+
+```bash
+sudo certbot --nginx -d mikro.domain.com
+```
+
+#### 4. Verifikasi
+
+Buka `https://mikro.domain.com` di browser → masukkan basic auth → WebFig muncul.
+
+### ⚠️ Keamanan
+
+- **Selalu pakai basic auth** — WebFig punya login sendiri, tapi basic auth menambah layer proteksi
+- **Gunakan password kuat** untuk basic auth dan user MikroTik
+- **Jangan disable HTTPS** — semua traffic harus terenkripsi
+- Traffic mengalir: Browser → HTTPS → Nginx → WireGuard (encrypted) → MikroTik
+- Pertimbangkan whitelist IP di nginx jika hanya diakses dari lokasi tertentu:
+
+```nginx
+# Tambahkan di dalam block server
+allow 123.456.789.0/24;  # IP kantor/rumah
+deny all;
+```
 
 ## 📄 Lisensi
 
