@@ -3,6 +3,23 @@ import { mikrotik } from '../mikrotik.js';
 import { database } from '../database.js';
 import { formatMemory } from '../utils.js';
 
+function formatUptime(raw) {
+  if (!raw) return '-';
+  // MikroTik format: "2w3d5h30m15s" or "5h30m15s" etc.
+  const w = raw.match(/(\d+)w/)?.[1] || 0;
+  const d = raw.match(/(\d+)d/)?.[1] || 0;
+  const h = raw.match(/(\d+)h/)?.[1] || 0;
+  const m = raw.match(/(\d+)m/)?.[1] || 0;
+  const s = raw.match(/(\d+)s/)?.[1] || 0;
+  const parts = [];
+  if (+w > 0) parts.push(`${w} minggu`);
+  if (+d > 0) parts.push(`${d} hari`);
+  if (+h > 0) parts.push(`${h} jam`);
+  if (+m > 0) parts.push(`${m} menit`);
+  if (parts.length === 0 && +s > 0) parts.push(`${s} detik`);
+  return parts.length > 0 ? parts.join(' ') : raw;
+}
+
 // ═══════════════════════════════════
 //  SHOW SERVER INFO
 // ═══════════════════════════════════
@@ -24,7 +41,7 @@ async function showServerInfo(ctx, edit = false) {
       `   Board    : ${resource['board-name'] || '-'}\n` +
       `   Version  : RouterOS ${resource.version || '-'}\n` +
       `   Arch     : ${resource['architecture-name'] || '-'}\n` +
-      `   Uptime   : ${resource.uptime || '-'}\n` +
+      `   Uptime   : ${formatUptime(resource.uptime)}\n` +
       `   CPU Load : ${resource['cpu-load'] || '-'}%\n` +
       `   Memory   : ${formatMemory(resource['free-memory'], resource['total-memory'])}\n` +
       `\n<b>📡 Hotspot</b>\n` +

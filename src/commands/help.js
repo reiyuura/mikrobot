@@ -25,6 +25,7 @@ async function showHelp(ctx) {
     `/active — Lihat user yang sedang online\n` +
     `/info — Info server MikroTik\n` +
     `/income — Laporan pendapatan\n` +
+    `/reboot — Reboot MikroTik\n` +
     `/help — Panduan ini\n\n` +
     `<b>💡 Tips:</b>\n` +
     `• Username = Password (tinggal copy)\n` +

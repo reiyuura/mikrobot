@@ -13,6 +13,8 @@ export function registerStart(bot) {
       .text('💰 Pendapatan', 'menu:income')
       .row()
       .text('📊 Info Server', 'menu:info')
+      .text('🔄 Reboot', 'menu:reboot')
+      .row()
       .text('❓ Bantuan', 'menu:help');
 
     await ctx.reply(

@@ -11,6 +11,7 @@ import { registerActiveUser } from './commands/activeuser.js';
 import { registerServerInfo } from './commands/serverinfo.js';
 import { registerIncome } from './commands/income.js';
 import { registerHelp } from './commands/help.js';
+import { registerReboot } from './commands/reboot.js';
 
 // ═══════════════════════════════════
 //  INITIALIZE BOT
@@ -27,6 +28,7 @@ registerDeleteUser(bot);
 registerActiveUser(bot);
 registerServerInfo(bot);
 registerIncome(bot);
+registerReboot(bot);
 registerHelp(bot);
 
 // ═══════════════════════════════════
@@ -58,6 +60,7 @@ async function main() {
       { command: 'active', description: 'User Yang Sedang Online' },
       { command: 'info', description: 'Info Server MikroTik' },
       { command: 'income', description: 'Laporan Pendapatan' },
+      { command: 'reboot', description: 'Reboot MikroTik' },
       { command: 'help', description: 'Panduan' },
     ]);
     console.log('📋 Bot commands registered.');

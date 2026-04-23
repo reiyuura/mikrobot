@@ -111,6 +111,15 @@ class MikroTikAPI {
   }
 
   // ═══════════════════════════════════
+  //  REBOOT
+  // ═══════════════════════════════════
+
+  async reboot() {
+    // RouterOS REST API: POST /system/reboot
+    await this.client.post('/system/reboot');
+  }
+
+  // ═══════════════════════════════════
   //  HEALTH CHECK
   // ═══════════════════════════════════
 
