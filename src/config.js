@@ -20,6 +20,12 @@ export const config = {
     pass: process.env.ROUTER_PASS || '',
   },
 
+  // Anti-tether: TTL=1 + drop TTL 63/127 + MAC bind
+  // HOTSPOT_INTERFACE = iface ke client hotspot (bukan WAN)
+  // HOTSPOT_SUBNET    = subnet pool hotspot
+  hotspotInterface: process.env.HOTSPOT_INTERFACE || 'ether4',
+  hotspotSubnet: process.env.HOTSPOT_SUBNET || '192.168.20.0/24',
+  antiTether: process.env.ANTI_TETHER !== 'false', // default ON
 
   usernameLength: Number(process.env.USERNAME_LENGTH) || 6,
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',

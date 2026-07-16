@@ -44,6 +44,37 @@ async function main() {
 
   if (isOnline) {
     console.log('✅ Router is reachable!');
+
+    // Anti-tether + MAC bind (idempotent)
+    if (config.antiTether) {
+      try {
+        console.log('🛡  Ensuring anti-tether rules...');
+        const anti = await mikrotik.ensureAntiTether({
+          hotspotInterface: config.hotspotInterface,
+          hotspotSubnet: config.hotspotSubnet,
+        });
+        console.log(
+          `   TTL mangle: ${anti.ttlMangle} | drop63: ${anti.dropTtl63} | drop127: ${anti.dropTtl127}`
+        );
+        if (anti.errors.length) {
+          console.warn('   anti-tether warnings:', anti.errors.join('; '));
+        }
+
+        const mac = await mikrotik.ensureMacBindOnProfiles();
+        if (mac.updated.length) {
+          console.log(`   MAC bind added on profiles: ${mac.updated.join(', ')}`);
+        } else {
+          console.log(`   MAC bind already set (${mac.skipped.join(', ') || 'none'})`);
+        }
+        if (mac.errors?.length) {
+          console.warn('   MAC bind warnings:', mac.errors.join('; '));
+        }
+      } catch (err) {
+        console.warn('⚠️  Anti-tether setup failed:', err.message);
+      }
+    } else {
+      console.log('🛡  Anti-tether disabled (ANTI_TETHER=false)');
+    }
   } else {
     console.warn('⚠️  Router is NOT reachable. Bot will start anyway.');
     console.warn('   Make sure WireGuard tunnel is active and REST API is enabled.');

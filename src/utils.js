@@ -36,6 +36,14 @@ export const PROFILES = {
     price: 15000,
     validityDays: 7,
   },
+  '30hari': {
+    name: '30hari',
+    label: '30hari',
+    'session-timeout': '30d 00:00:00',
+    'rate-limit': '4M/30M',
+     price: 50000,
+     validityDays: 30,
+  },
   'keluarga': {
     name: 'keluarga',
     label: 'Keluarga (30 Hari)',
