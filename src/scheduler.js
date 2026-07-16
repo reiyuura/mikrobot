@@ -315,13 +315,41 @@ export function startScheduler(notifyCallback) {
   schedulerTick();
   schedulerTimer = setInterval(schedulerTick, CHECK_INTERVAL);
 
-  // Fast tether poll
-  if (config.antiTether) {
-    const ms = Math.max(10, config.tetherPollSeconds) * 1000;
-    console.log(`🛡  Tether monitor ON (poll ${config.tetherPollSeconds}s, punish ${config.tetherPunishMin}m, cooldown ${config.tetherNotifyCooldownMin}m)`);
-    checkTetherAbuse();
-    tetherTimer = setInterval(checkTetherAbuse, ms);
+  // Fast tether poll (respect runtime config)
+  restartTetherMonitor();
+}
+
+/** Restart tether poll timer from current config (call after /tether set poll/on/off). */
+export function restartTetherMonitor() {
+  if (tetherTimer) {
+    clearInterval(tetherTimer);
+    tetherTimer = null;
   }
+
+  if (!config.antiTether) {
+    console.log('🛡  Tether monitor OFF');
+    return { enabled: false };
+  }
+
+  const seconds = Math.max(10, Number(config.tetherPollSeconds) || 30);
+  const ms = seconds * 1000;
+  console.log(
+    `🛡  Tether monitor ON (poll ${seconds}s, punish ${config.tetherPunishMin}m, cooldown ${config.tetherNotifyCooldownMin}m, autopunish ${config.tetherAutoPunish})`
+  );
+  checkTetherAbuse();
+  tetherTimer = setInterval(checkTetherAbuse, ms);
+  return {
+    enabled: true,
+    pollSeconds: seconds,
+    punishMin: config.tetherPunishMin,
+    cooldownMin: config.tetherNotifyCooldownMin,
+    autoPunish: config.tetherAutoPunish,
+  };
+}
+
+/** Manual one-shot scan (for /tether scan). */
+export async function runTetherScanNow() {
+  await checkTetherAbuse();
 }
 
 export function stopScheduler() {

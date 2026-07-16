@@ -1,6 +1,6 @@
 import { createBot } from './bot.js';
 import { mikrotik } from './mikrotik.js';
-import { config } from './config.js';
+import { config, applyTetherSettingsFromDb, getTetherRuntime } from './config.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
 import { registerStart } from './commands/start.js';
 import { registerAddUser } from './commands/adduser.js';
@@ -12,10 +12,14 @@ import { registerServerInfo } from './commands/serverinfo.js';
 import { registerIncome } from './commands/income.js';
 import { registerHelp } from './commands/help.js';
 import { registerReboot } from './commands/reboot.js';
+import { registerTether } from './commands/tether.js';
 
 // ═══════════════════════════════════
 //  INITIALIZE BOT
 // ═══════════════════════════════════
+
+// Apply persisted /tether settings before anything else
+applyTetherSettingsFromDb();
 
 const bot = createBot();
 
@@ -29,6 +33,7 @@ registerActiveUser(bot);
 registerServerInfo(bot);
 registerIncome(bot);
 registerReboot(bot);
+registerTether(bot);
 registerHelp(bot);
 
 // ═══════════════════════════════════
@@ -93,6 +98,7 @@ async function main() {
       { command: 'active', description: 'User Yang Sedang Online' },
       { command: 'info', description: 'Info Server MikroTik' },
       { command: 'income', description: 'Laporan Pendapatan' },
+      { command: 'tether', description: 'Setting Anti-Tether' },
       { command: 'reboot', description: 'Reboot MikroTik' },
       { command: 'help', description: 'Panduan' },
     ]);
@@ -121,7 +127,11 @@ async function main() {
       console.log('✅ MikroBot is running!');
       console.log('⏰ Auto-cleanup: ON');
       if (config.antiTether) {
-        console.log(`🛡  Anti-tether + notif: ON (poll ${config.tetherPollSeconds}s)`);
+        console.log(
+          `🛡  Anti-tether + notif: ON (poll ${getTetherRuntime().pollSeconds}s)`
+        );
+      } else {
+        console.log('🛡  Anti-tether: OFF');
       }
       console.log('━━━━━━━━━━━━━━━━━━━━━━━');
     },

@@ -25,6 +25,7 @@ async function showHelp(ctx) {
     `/active — Lihat user yang sedang online\n` +
     `/info — Info server MikroTik\n` +
     `/income — Laporan pendapatan\n` +
+    `/tether — Setting anti-tether (cooldown, punish, dll)\n` +
     `/reboot — Reboot MikroTik\n` +
     `/help — Panduan ini\n\n` +
     `<b>💡 Tips:</b>\n` +
@@ -32,7 +33,8 @@ async function showHelp(ctx) {
     `• Gunakan /voucher untuk buat banyak user sekaligus\n` +
     `• User otomatis dihapus saat masa aktif habis 🧹\n` +
     `• /deleteuser akan kick user yang sedang online\n` +
-    `• Harga tercatat otomatis di /income\n\n` +
+    `• Harga tercatat otomatis di /income\n` +
+    `• /tether buat atur cooldown notif & ban tethering\n\n` +
     `<b>🔗 Koneksi:</b>\n` +
     `Bot → WireGuard → MikroTik REST API\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━`,

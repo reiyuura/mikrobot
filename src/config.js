@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { database } from './database.js';
 
 function required(key) {
   const value = process.env[key];
@@ -9,9 +10,18 @@ function required(key) {
   return value;
 }
 
+function parseBool(v, defaultTrue = true) {
+  if (v === undefined || v === null || v === '') return defaultTrue;
+  const s = String(v).toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(s)) return true;
+  if (['0', 'false', 'no', 'off'].includes(s)) return false;
+  return defaultTrue;
+}
+
+// Defaults from env (boot). Runtime overrides live in DB settings.
 export const config = {
   botToken: required('BOT_TOKEN'),
-  adminIds: required('ADMIN_IDS').split(',').map(id => Number(id.trim())),
+  adminIds: required('ADMIN_IDS').split(',').map((id) => Number(id.trim())),
 
   router: {
     host: process.env.ROUTER_HOST || '10.10.10.2',
@@ -21,20 +31,115 @@ export const config = {
   },
 
   // Anti-tether: TTL=1 + drop TTL 63/127 + MAC bind
-  // HOTSPOT_INTERFACE = iface ke client hotspot (bukan WAN)
-  // HOTSPOT_SUBNET    = subnet pool hotspot
   hotspotInterface: process.env.HOTSPOT_INTERFACE || 'ether4',
   hotspotSubnet: process.env.HOTSPOT_SUBNET || '192.168.20.0/24',
-  antiTether: process.env.ANTI_TETHER !== 'false', // default ON
+  antiTether: parseBool(process.env.ANTI_TETHER, true),
 
-  // Tether abuse detect + notify
+  // Tether abuse detect + notify (mutable via /tether)
   tetherList: process.env.TETHER_LIST || 'mikrobot-tether',
   tetherPollSeconds: Number(process.env.TETHER_POLL_SECONDS) || 30,
   tetherNotifyCooldownMin: Number(process.env.TETHER_NOTIFY_COOLDOWN_MIN) || 10,
-  tetherPunishMin: Number(process.env.TETHER_PUNISH_MIN) || 5, // disable user N menit
+  tetherPunishMin: Number(process.env.TETHER_PUNISH_MIN) || 5,
   tetherListTimeout: process.env.TETHER_LIST_TIMEOUT || '10m',
-  tetherAutoPunish: process.env.TETHER_AUTO_PUNISH !== 'false', // kick + disable
+  tetherAutoPunish: parseBool(process.env.TETHER_AUTO_PUNISH, true),
 
   usernameLength: Number(process.env.USERNAME_LENGTH) || 6,
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',
 };
+
+/** Snapshot of env defaults (before DB override). */
+export const tetherDefaults = {
+  antiTether: config.antiTether,
+  tetherPollSeconds: config.tetherPollSeconds,
+  tetherNotifyCooldownMin: config.tetherNotifyCooldownMin,
+  tetherPunishMin: config.tetherPunishMin,
+  tetherListTimeout: config.tetherListTimeout,
+  tetherAutoPunish: config.tetherAutoPunish,
+  tetherList: config.tetherList,
+};
+
+/**
+ * Apply runtime tether settings from DB onto live config object.
+ * Call once at startup (and after each /tether set).
+ */
+export function applyTetherSettingsFromDb() {
+  const s = database.getSettings()?.tether || {};
+  if (typeof s.enabled === 'boolean') config.antiTether = s.enabled;
+  if (Number.isFinite(s.pollSeconds) && s.pollSeconds >= 10) {
+    config.tetherPollSeconds = Math.floor(s.pollSeconds);
+  }
+  if (Number.isFinite(s.cooldownMin) && s.cooldownMin >= 0) {
+    config.tetherNotifyCooldownMin = Math.floor(s.cooldownMin);
+  }
+  if (Number.isFinite(s.punishMin) && s.punishMin >= 0) {
+    config.tetherPunishMin = Math.floor(s.punishMin);
+  }
+  if (typeof s.autoPunish === 'boolean') config.tetherAutoPunish = s.autoPunish;
+  if (typeof s.listTimeout === 'string' && s.listTimeout.trim()) {
+    config.tetherListTimeout = s.listTimeout.trim();
+  }
+  if (typeof s.list === 'string' && s.list.trim()) {
+    config.tetherList = s.list.trim();
+  }
+  return getTetherRuntime();
+}
+
+export function getTetherRuntime() {
+  return {
+    enabled: config.antiTether,
+    pollSeconds: config.tetherPollSeconds,
+    cooldownMin: config.tetherNotifyCooldownMin,
+    punishMin: config.tetherPunishMin,
+    autoPunish: config.tetherAutoPunish,
+    listTimeout: config.tetherListTimeout,
+    list: config.tetherList,
+    interface: config.hotspotInterface,
+    subnet: config.hotspotSubnet,
+  };
+}
+
+/**
+ * Update one or more tether settings (persist + apply).
+ * Returns { ok, error?, runtime }.
+ */
+export function updateTetherSettings(patch = {}) {
+  const next = { ...(database.getSettings()?.tether || {}) };
+  const errors = [];
+
+  if ('enabled' in patch) {
+    if (typeof patch.enabled !== 'boolean') errors.push('enabled must be bool');
+    else next.enabled = patch.enabled;
+  }
+  if ('pollSeconds' in patch) {
+    const n = Number(patch.pollSeconds);
+    if (!Number.isFinite(n) || n < 10 || n > 3600) errors.push('poll 10–3600 detik');
+    else next.pollSeconds = Math.floor(n);
+  }
+  if ('cooldownMin' in patch) {
+    const n = Number(patch.cooldownMin);
+    if (!Number.isFinite(n) || n < 0 || n > 1440) errors.push('cooldown 0–1440 menit');
+    else next.cooldownMin = Math.floor(n);
+  }
+  if ('punishMin' in patch) {
+    const n = Number(patch.punishMin);
+    if (!Number.isFinite(n) || n < 0 || n > 1440) errors.push('punish 0–1440 menit');
+    else next.punishMin = Math.floor(n);
+  }
+  if ('autoPunish' in patch) {
+    if (typeof patch.autoPunish !== 'boolean') errors.push('autoPunish must be bool');
+    else next.autoPunish = patch.autoPunish;
+  }
+  if ('listTimeout' in patch) {
+    const v = String(patch.listTimeout || '').trim();
+    if (!/^\d+[smhd]$/i.test(v)) errors.push('listTimeout format e.g. 10m, 1h');
+    else next.listTimeout = v.toLowerCase();
+  }
+
+  if (errors.length) {
+    return { ok: false, error: errors.join('; '), runtime: getTetherRuntime() };
+  }
+
+  database.setSettings({ tether: next });
+  const runtime = applyTetherSettingsFromDb();
+  return { ok: true, runtime, saved: next };
+}

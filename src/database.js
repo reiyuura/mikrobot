@@ -34,6 +34,8 @@ function saveDB(data) {
 let db = loadDB();
 if (!db.tether) db.tether = {};
 if (!Array.isArray(db.tetherEvents)) db.tetherEvents = [];
+if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+if (!db.settings.tether || typeof db.settings.tether !== 'object') db.settings.tether = {};
 
 // ═══════════════════════════════════
 //  DATABASE OPERATIONS
@@ -271,5 +273,48 @@ export const database = {
       (t) => t.punishUntil && new Date(t.punishUntil).getTime() > Date.now()
     ).length;
     return { users, totalHits, activePunish, events: db.tetherEvents.length };
+  },
+
+  getRecentTetherEvents(limit = 10) {
+    return (db.tetherEvents || []).slice(-limit).reverse();
+  },
+
+  getAllTetherStates() {
+    return { ...db.tether };
+  },
+
+  resetTetherUser(username) {
+    if (!db.tether[username]) return false;
+    delete db.tether[username];
+    saveDB(db);
+    return true;
+  },
+
+  resetAllTether() {
+    db.tether = {};
+    db.tetherEvents = [];
+    saveDB(db);
+  },
+
+  // ═══════════════════════════════════
+  //  SETTINGS (runtime, persist di JSON)
+  // ═══════════════════════════════════
+
+  getSettings() {
+    return db.settings || { tether: {} };
+  },
+
+  setSettings(partial) {
+    if (!db.settings) db.settings = {};
+    if (partial.tether) {
+      db.settings.tether = { ...(db.settings.tether || {}), ...partial.tether };
+    }
+    // future top-level keys
+    for (const [k, v] of Object.entries(partial)) {
+      if (k === 'tether') continue;
+      db.settings[k] = v;
+    }
+    saveDB(db);
+    return db.settings;
   },
 };

@@ -15,6 +15,7 @@ export function registerStart(bot) {
       .text('📊 Info Server', 'menu:info')
       .text('🔄 Reboot', 'menu:reboot')
       .row()
+      .text('🛡 Anti-Tether', 'menu:tether')
       .text('❓ Bantuan', 'menu:help');
 
     await ctx.reply(
@@ -23,7 +24,8 @@ export function registerStart(bot) {
       `Kelola user hotspot MikroTik\n` +
       `langsung dari Telegram.\n\n` +
       `🔗 Router: <code>${process.env.ROUTER_HOST || '10.10.10.2'}</code>\n` +
-      `⏰ Auto-cleanup: ON\n\n` +
+      `⏰ Auto-cleanup: ON\n` +
+      `🛡 Anti-tether: ON (/tether)\n\n` +
       `Pilih menu di bawah atau ketik /help`,
       { parse_mode: 'HTML', reply_markup: keyboard }
     );
