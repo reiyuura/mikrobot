@@ -52,9 +52,11 @@ async function main() {
         const anti = await mikrotik.ensureAntiTether({
           hotspotInterface: config.hotspotInterface,
           hotspotSubnet: config.hotspotSubnet,
+          tetherList: config.tetherList,
+          tetherListTimeout: config.tetherListTimeout,
         });
         console.log(
-          `   TTL mangle: ${anti.ttlMangle} | drop63: ${anti.dropTtl63} | drop127: ${anti.dropTtl127}`
+          `   TTL mangle: ${anti.ttlMangle} | mark63: ${anti.markTtl63} | mark127: ${anti.markTtl127} | drop63: ${anti.dropTtl63} | drop127: ${anti.dropTtl127}`
         );
         if (anti.errors.length) {
           console.warn('   anti-tether warnings:', anti.errors.join('; '));
@@ -118,6 +120,9 @@ async function main() {
       console.log('━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('✅ MikroBot is running!');
       console.log('⏰ Auto-cleanup: ON');
+      if (config.antiTether) {
+        console.log(`🛡  Anti-tether + notif: ON (poll ${config.tetherPollSeconds}s)`);
+      }
       console.log('━━━━━━━━━━━━━━━━━━━━━━━');
     },
   });

@@ -27,6 +27,14 @@ export const config = {
   hotspotSubnet: process.env.HOTSPOT_SUBNET || '192.168.20.0/24',
   antiTether: process.env.ANTI_TETHER !== 'false', // default ON
 
+  // Tether abuse detect + notify
+  tetherList: process.env.TETHER_LIST || 'mikrobot-tether',
+  tetherPollSeconds: Number(process.env.TETHER_POLL_SECONDS) || 30,
+  tetherNotifyCooldownMin: Number(process.env.TETHER_NOTIFY_COOLDOWN_MIN) || 10,
+  tetherPunishMin: Number(process.env.TETHER_PUNISH_MIN) || 5, // disable user N menit
+  tetherListTimeout: process.env.TETHER_LIST_TIMEOUT || '10m',
+  tetherAutoPunish: process.env.TETHER_AUTO_PUNISH !== 'false', // kick + disable
+
   usernameLength: Number(process.env.USERNAME_LENGTH) || 6,
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',
 };

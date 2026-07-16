@@ -96,9 +96,38 @@ class MikroTikAPI {
   }
 
   async kickUser(id) {
-    await this.client.post('/ip/hotspot/active/remove', {
-      '.id': id,
-    });
+    // REST CRUD style preferred; fallback to set-style
+    try {
+      await this.client.delete(`/ip/hotspot/active/${id}`);
+    } catch {
+      await this.client.post('/ip/hotspot/active/remove', { '.id': id });
+    }
+  }
+
+  async kickUserByName(username) {
+    const sessions = await this.getActiveSessions();
+    const hits = sessions.filter((s) => s.user === username);
+    for (const s of hits) {
+      await this.kickUser(s['.id']);
+    }
+    return hits.length;
+  }
+
+  async setUserDisabled(id, disabled, comment) {
+    const body = { disabled: disabled ? 'true' : 'false' };
+    if (comment !== undefined) body.comment = comment;
+    const { data } = await this.client.patch(`/ip/hotspot/user/${id}`, body);
+    return data;
+  }
+
+  async getAddressList(listName) {
+    const { data } = await this.client.get('/ip/firewall/address-list');
+    if (!listName) return data;
+    return data.filter((e) => e.list === listName);
+  }
+
+  async removeAddressListEntry(id) {
+    await this.client.delete(`/ip/firewall/address-list/${id}`);
   }
 
   // ═══════════════════════════════════
@@ -159,9 +188,13 @@ class MikroTikAPI {
   async ensureAntiTether({
     hotspotInterface = 'ether4',
     hotspotSubnet = '192.168.20.0/24',
+    tetherList = 'mikrobot-tether',
+    tetherListTimeout = '10m',
   } = {}) {
     const result = {
       ttlMangle: 'skip',
+      markTtl63: 'skip',
+      markTtl127: 'skip',
       dropTtl63: 'skip',
       dropTtl127: 'skip',
       errors: [],
@@ -185,7 +218,6 @@ class MikroTikAPI {
         });
         result.ttlMangle = 'created';
       } else {
-        // Keep rule in sync if interface drifted
         const needsPatch =
           existing['out-interface'] !== hotspotInterface ||
           existing['new-ttl'] !== 'set:1' ||
@@ -208,7 +240,12 @@ class MikroTikAPI {
       result.errors.push(`ttlMangle: ${err.message}`);
     }
 
-    // --- 2) filter drop TTL 63 / 127 from hotspot subnet ---
+    // --- 2) filter: mark offender IP to address-list, then drop ---
+    // Order matters: mark BEFORE drop so bot can map IP → hotspot user.
+    const markTargets = [
+      { ttl: 'equal:63', key: 'markTtl63', comment: 'MikroBot mark-tether TTL63' },
+      { ttl: 'equal:127', key: 'markTtl127', comment: 'MikroBot mark-tether TTL127' },
+    ];
     const dropTargets = [
       { ttl: 'equal:63', key: 'dropTtl63', comment: 'MikroBot detect-tether TTL63' },
       { ttl: 'equal:127', key: 'dropTtl127', comment: 'MikroBot detect-tether TTL127' },
@@ -220,6 +257,57 @@ class MikroTikAPI {
     } catch (err) {
       result.errors.push(`filter list: ${err.message}`);
       return result;
+    }
+
+    for (const target of markTargets) {
+      try {
+        const existing = filters.find((r) => (r.comment || '').includes(target.comment));
+        const dropSibling = filters.find((r) =>
+          (r.comment || '').includes(target.comment.replace('mark-tether', 'detect-tether'))
+        );
+
+        if (!existing) {
+          const body = {
+            chain: 'forward',
+            action: 'add-src-to-address-list',
+            'address-list': tetherList,
+            'address-list-timeout': tetherListTimeout,
+            'src-address': hotspotSubnet,
+            ttl: target.ttl,
+            comment: target.comment,
+          };
+          // Must run BEFORE drop twin, else packets never reach mark
+          if (dropSibling?.['.id']) {
+            body['place-before'] = dropSibling['.id'];
+          }
+          await this.client.put('/ip/firewall/filter', body);
+          result[target.key] = 'created';
+        } else {
+          // If mark sits after drop, move it before drop
+          if (dropSibling?.['.id'] && existing['.id']) {
+            try {
+              // numbers after destination means move before destination in many ROS versions
+              await this.client.post('/ip/firewall/filter/move', {
+                numbers: existing['.id'],
+                destination: dropSibling['.id'],
+              });
+            } catch {
+              // ignore move errors; rule still works if already ordered
+            }
+          }
+          result[target.key] = existing.invalid === 'true' ? 'invalid' : 'exists';
+        }
+      } catch (err) {
+        result[target.key] = 'error';
+        result.errors.push(`${target.key}: ${err.message}`);
+      }
+    }
+
+    // refresh after mark inserts
+    try {
+      filters = await this.getFilterRules();
+    } catch {
+      // keep previous
     }
 
     for (const target of dropTargets) {
@@ -235,7 +323,6 @@ class MikroTikAPI {
           });
           result[target.key] = 'created';
         } else if (existing.invalid === 'true') {
-          // Some RouterOS builds mark certain TTL equals invalid; leave but report
           result[target.key] = 'invalid';
         } else {
           result[target.key] = 'exists';
