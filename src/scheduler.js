@@ -123,10 +123,24 @@ async function cleanupExpiredUsers() {
 // ═══════════════════════════════════
 //  3) TETHER ABUSE DETECT + NOTIFY
 //  address-list mikrobot-tether ← filter mark
-//  map IP → active hotspot session → user
+//  map IP → hotspot session OR DHCP lease
 //  Admin: Telegram notif
-//  User: kick + disable sementara (internet putus)
+//  Hotspot user: kick + disable sementara
+//  Tetangga DHCP: block lease sementara
 // ═══════════════════════════════════
+
+function detectSegment(address) {
+  if (!address) return 'unknown';
+  if (String(address).startsWith('192.168.20.')) return 'hotspot';
+  if (String(address).startsWith('192.168.30.')) return 'tetangga';
+  return 'unknown';
+}
+
+function segmentLabel(seg) {
+  if (seg === 'hotspot') return 'Hotspot voucher';
+  if (seg === 'tetangga') return 'WiFi tetangga';
+  return seg;
+}
 
 async function restoreExpiredPunishments() {
   const expired = database.getExpiredTetherPunishments();
@@ -134,25 +148,46 @@ async function restoreExpiredPunishments() {
 
   for (const { username, state } of expired) {
     try {
-      const mtUser = await mikrotik.getUserByName(username);
-      if (mtUser && mtUser.disabled === 'true') {
-        const original = database.clearTetherPunish(username);
-        const comment =
-          original ||
-          (mtUser.comment || '').replace(/\s*\|?\s*TETHER-BAN until [^\|]+/g, '').trim();
-        await mikrotik.setUserDisabled(mtUser['.id'], false, comment || mtUser.comment);
-        console.log(`🔓 Tether punish ended, re-enabled: ${username}`);
-
-        if (notifyFn) {
-          await notifyFn(
-            `🔓 <b>Tether ban berakhir</b>\n` +
-              `User <code>${username}</code> diaktifkan lagi.\n` +
-              `📅 ${now().format('DD MMM YYYY, HH:mm [WIB]')}`
-          );
+      // Hotspot user restore
+      if (!username.startsWith('dhcp:') && !username.startsWith('ip:')) {
+        const mtUser = await mikrotik.getUserByName(username);
+        if (mtUser && mtUser.disabled === 'true') {
+          const original = database.clearTetherPunish(username);
+          const comment =
+            original ||
+            (mtUser.comment || '').replace(/\s*\|?\s*TETHER-BAN until [^\|]+/g, '').trim();
+          await mikrotik.setUserDisabled(mtUser['.id'], false, comment || mtUser.comment);
+          console.log(`🔓 Tether punish ended, re-enabled hotspot: ${username}`);
+          if (notifyFn) {
+            await notifyFn(
+              `🔓 <b>Tether ban berakhir</b>\n` +
+                `User hotspot <code>${username}</code> diaktifkan lagi.\n` +
+                `📅 ${now().format('DD MMM YYYY, HH:mm [WIB]')}`
+            );
+          }
+          continue;
         }
-      } else {
-        database.clearTetherPunish(username);
       }
+
+      // DHCP lease restore (tetangga): key = dhcp:MAC or dhcp:IP
+      if (username.startsWith('dhcp:')) {
+        const address = state?.lastAddress;
+        if (address) {
+          const res = await mikrotik.unpunishDhcpAddress(address);
+          console.log(`🔓 Tether punish ended, unpunish DHCP ${address}:`, res);
+          if (notifyFn) {
+            await notifyFn(
+              `🔓 <b>Tether ban berakhir</b>\n` +
+                `Device tetangga <code>${address}</code> diaktifkan lagi.\n` +
+                `📅 ${now().format('DD MMM YYYY, HH:mm [WIB]')}`
+            );
+          }
+        }
+        database.clearTetherPunish(username);
+        continue;
+      }
+
+      database.clearTetherPunish(username);
     } catch (err) {
       console.error(`⚠️  Failed restore punish ${username}:`, err.message);
     }
@@ -171,47 +206,84 @@ async function checkTetherAbuse() {
     const sessions = await mikrotik.getActiveSessions();
     const byAddress = new Map(sessions.map((s) => [s.address, s]));
 
-    // Group by resolved username (or raw IP if no session)
+    let leases = [];
+    try {
+      leases = await mikrotik.getDhcpLeases();
+    } catch {
+      leases = [];
+    }
+    const leaseByAddress = new Map();
+    for (const l of leases) {
+      const a = l['active-address'] || l.address;
+      if (a) leaseByAddress.set(a, l);
+    }
+
     const hits = [];
     for (const entry of offenders) {
       const address = entry.address;
       const session = byAddress.get(address);
+      const lease = leaseByAddress.get(address);
+      const segment = detectSegment(address);
+
+      let identity = null;
+      let mac = null;
+      let uptime = null;
+      let kind = 'unknown';
+
+      if (session) {
+        identity = session.user;
+        mac = session['mac-address'] || null;
+        uptime = session.uptime || null;
+        kind = 'hotspot';
+      } else if (lease) {
+        mac = lease['active-mac-address'] || lease['mac-address'] || null;
+        identity = `dhcp:${mac || address}`;
+        uptime = lease['last-seen'] || lease.age || null;
+        kind = 'dhcp';
+      } else {
+        identity = null;
+        kind = segment === 'tetangga' ? 'dhcp' : 'unknown';
+      }
+
       hits.push({
         address,
         listId: entry['.id'],
-        username: session?.user || null,
-        mac: session?.['mac-address'] || null,
-        uptime: session?.uptime || null,
+        username: identity,
+        mac,
+        uptime,
+        segment,
+        kind,
+        hostName: lease?.['host-name'] || null,
+        leaseId: lease?.['.id'] || null,
         creationTime: entry['creation-time'] || null,
       });
     }
 
-    // Process unique users / IPs this tick
     const seen = new Set();
     for (const hit of hits) {
       const key = hit.username || `ip:${hit.address}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
+      // Unknown IP residual
       if (!hit.username) {
-        // No active session for this IP — still notify admin once per cooldown under pseudo key
         const { shouldNotify, state } = database.recordTetherHit(`ip:${hit.address}`, {
           address: hit.address,
-          mac: null,
+          mac: hit.mac,
           cooldownMin: config.tetherNotifyCooldownMin,
         });
         if (shouldNotify && notifyFn) {
           await notifyFn(
-            `🚨 <b>Tether attempt (IP tanpa session)</b>\n` +
+            `🚨 <b>Tether attempt (${segmentLabel(hit.segment)})</b>\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━\n` +
               `🌐 IP: <code>${hit.address}</code>\n` +
+              `📍 Seg: ${segmentLabel(hit.segment)}\n` +
               `📊 Hit ke-${state.count}\n` +
               `📅 ${now().format('DD MMM YYYY, HH:mm [WIB]')}\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-              `<i>Session sudah logout / IP residual di address-list</i>`
+              `<i>IP residual / session sudah logout</i>`
           );
         }
-        // cleanup residual list entry so it doesn't spam forever
         try {
           await mikrotik.removeAddressListEntry(hit.listId);
         } catch {
@@ -231,27 +303,41 @@ async function checkTetherAbuse() {
 
       if (config.tetherAutoPunish) {
         try {
-          // Kick active session → user instantly loses internet (their "notification")
-          const kicked = await mikrotik.kickUserByName(hit.username);
-          punishAction = kicked > 0 ? 'kick' : 'kick-miss';
+          if (hit.kind === 'hotspot') {
+            const kicked = await mikrotik.kickUserByName(hit.username);
+            punishAction = kicked > 0 ? 'kick' : 'kick-miss';
 
-          // Disable account for N minutes so re-login fails
-          const mtUser = await mikrotik.getUserByName(hit.username);
-          if (mtUser) {
+            const mtUser = await mikrotik.getUserByName(hit.username);
+            if (mtUser) {
+              const until = new Date(Date.now() + config.tetherPunishMin * 60 * 1000);
+              punishUntilText = now()
+                .add(config.tetherPunishMin, 'minute')
+                .format('HH:mm [WIB]');
+              const untilIso = until.toISOString();
+              const originalComment = mtUser.comment || '';
+              const banTag = `TETHER-BAN until ${until.toISOString()}`;
+              const newComment = originalComment.includes('TETHER-BAN')
+                ? originalComment.replace(/TETHER-BAN until [^\|]+/, banTag)
+                : `${originalComment}${originalComment ? ' | ' : ''}${banTag}`;
+
+              await mikrotik.setUserDisabled(mtUser['.id'], true, newComment);
+              database.setTetherPunish(hit.username, untilIso, originalComment);
+              punishAction = kicked > 0 ? 'kick+disable' : 'disable';
+            }
+          } else if (hit.kind === 'dhcp') {
+            // Ban IP via address-list + disable lease (if any)
+            const res = await mikrotik.punishDhcpAddress(hit.address, {
+              minutes: config.tetherPunishMin,
+            });
             const until = new Date(Date.now() + config.tetherPunishMin * 60 * 1000);
             punishUntilText = now()
               .add(config.tetherPunishMin, 'minute')
               .format('HH:mm [WIB]');
-            const untilIso = until.toISOString();
-            const originalComment = mtUser.comment || '';
-            const banTag = `TETHER-BAN until ${until.toISOString()}`;
-            const newComment = originalComment.includes('TETHER-BAN')
-              ? originalComment.replace(/TETHER-BAN until [^\|]+/, banTag)
-              : `${originalComment}${originalComment ? ' | ' : ''}${banTag}`;
-
-            await mikrotik.setUserDisabled(mtUser['.id'], true, newComment);
-            database.setTetherPunish(hit.username, untilIso, originalComment);
-            punishAction = kicked > 0 ? 'kick+disable' : 'disable';
+            database.setTetherPunish(hit.username, until.toISOString(), null);
+            if (res.banListed && res.leaseDisabled) punishAction = 'ban+disable-lease';
+            else if (res.banListed) punishAction = 'ip-ban';
+            else if (res.leaseDisabled) punishAction = 'disable-lease';
+            else punishAction = `dhcp-fail: ${res.banError || res.leaseError || 'unknown'}`;
           }
         } catch (err) {
           console.error(`⚠️  Tether punish failed ${hit.username}:`, err.message);
@@ -259,7 +345,6 @@ async function checkTetherAbuse() {
         }
       }
 
-      // Remove address-list entry so next attempt is a fresh hit
       try {
         await mikrotik.removeAddressListEntry(hit.listId);
       } catch {
@@ -267,24 +352,30 @@ async function checkTetherAbuse() {
       }
 
       console.log(
-        `🚨 Tether: ${hit.username} @ ${hit.address} hits=${state.count} action=${punishAction} notify=${shouldNotify}`
+        `🚨 Tether [${hit.segment}/${hit.kind}]: ${hit.username} @ ${hit.address} hits=${state.count} action=${punishAction} notify=${shouldNotify}`
       );
 
       if (shouldNotify && notifyFn) {
-        let msg = `🚨 <b>TETHER / HOTSPOT SHARE DETECTED</b>\n`;
+        let msg = `🚨 <b>TETHER DETECTED</b>\n`;
         msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        msg += `👤 User : <code>${hit.username}</code>\n`;
+        msg += `📍 Seg  : <b>${segmentLabel(hit.segment)}</b>\n`;
+        msg += `👤 ID   : <code>${hit.username}</code>\n`;
+        if (hit.hostName) msg += `🖥 Host : <code>${hit.hostName}</code>\n`;
         msg += `🌐 IP   : <code>${hit.address}</code>\n`;
         msg += `📱 MAC  : <code>${hit.mac || '-'}</code>\n`;
-        msg += `⏱ Up   : ${hit.uptime || '-'}\n`;
+        msg += `⏱ Seen : ${hit.uptime || '-'}\n`;
         msg += `📊 Hit  : ke-${state.count}\n`;
         msg += `🛡 Aksi : <b>${punishAction}</b>\n`;
-        if (punishAction.includes('disable')) {
+        if (punishAction.includes('disable') || punishAction.includes('ban') || punishAction === 'dhcp-block') {
           msg += `⏳ Ban  : ${config.tetherPunishMin} menit (sampai ${punishUntilText})\n`;
         }
         msg += `📅 ${now().format('DD MMM YYYY, HH:mm [WIB]')}\n`;
         msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        msg += `<i>User di-kick. Internet mati ${config.tetherPunishMin} menit = "notif" ke user (voucher gak punya Telegram).</i>`;
+        if (hit.kind === 'hotspot') {
+          msg += `<i>Voucher di-kick + disable ${config.tetherPunishMin} menit.</i>`;
+        } else {
+          msg += `<i>Device tetangga di-block lease ${config.tetherPunishMin} menit (max 5 device).</i>`;
+        }
         await notifyFn(msg);
       }
     }

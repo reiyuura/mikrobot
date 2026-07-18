@@ -27,12 +27,15 @@ function statusText() {
   let msg = `🛡 <b>Anti-Tether Settings</b>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `Status     : <b>${r.enabled ? 'ON' : 'OFF'}</b>\n`;
+  msg += `Segments   : <code>${(r.segments || []).join(', ') || '-'}</code>\n`;
+  msg += `Hotspot    : <code>${r.interface}</code> / <code>${r.subnet}</code>\n`;
+  msg += `Tetangga   : <b>${r.tetanggaEnabled ? 'ON' : 'OFF'}</b> · <code>${r.tetanggaInterface}</code> / <code>${r.tetanggaSubnet}</code>\n`;
+  msg += `Max device : <code>${r.tetanggaMaxDevices}</code> (pool tetangga)\n`;
   msg += `Poll       : <code>${r.pollSeconds}s</code>\n`;
   msg += `Cooldown   : <code>${r.cooldownMin} menit</code> (notif admin)\n`;
-  msg += `Punish     : <code>${r.punishMin} menit</code> (disable user)\n`;
+  msg += `Punish     : <code>${r.punishMin} menit</code>\n`;
   msg += `AutoPunish : <b>${r.autoPunish ? 'ON' : 'OFF'}</b>\n`;
   msg += `List       : <code>${r.list}</code> (timeout ${r.listTimeout})\n`;
-  msg += `Iface/Net  : <code>${r.interface}</code> / <code>${r.subnet}</code>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `📊 Stats: ${stats.totalHits} hit · ${stats.users} user · ${stats.activePunish} ban aktif\n`;
   if (banned.length) {

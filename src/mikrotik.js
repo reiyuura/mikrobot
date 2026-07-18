@@ -130,6 +130,187 @@ class MikroTikAPI {
     await this.client.delete(`/ip/firewall/address-list/${id}`);
   }
 
+  async getDhcpLeases() {
+    const { data } = await this.client.get('/ip/dhcp-server/lease');
+    return data;
+  }
+
+  async getDhcpLeaseByAddress(address) {
+    const leases = await this.getDhcpLeases();
+    return (
+      leases.find(
+        (l) =>
+          (l['active-address'] === address || l.address === address) &&
+          l.status === 'bound'
+      ) ||
+      leases.find((l) => l['active-address'] === address || l.address === address) ||
+      null
+    );
+  }
+
+  async makeDhcpLeaseStatic(id) {
+    try {
+      await this.client.post('/ip/dhcp-server/lease/make-static', { '.id': id });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Punish DHCP device (tetangga):
+   * 1) make-static if dynamic
+   * 2) disable lease (blocked param tidak ada di beberapa ROS)
+   * 3) put IP into mikrobot-tether-ban address-list with timeout → drop filter
+   */
+  async punishDhcpAddress(address, { minutes = 5, banList = 'mikrobot-tether-ban' } = {}) {
+    const result = { leaseDisabled: false, banListed: false, leaseId: null, mac: null };
+
+    // Ensure drop rule for ban list exists
+    try {
+      const filters = await this.getFilterRules();
+      const has = filters.some((r) => (r.comment || '') === 'MikroBot drop-tether-ban');
+      if (!has) {
+        await this.client.put('/ip/firewall/filter', {
+          chain: 'forward',
+          action: 'drop',
+          'src-address-list': banList,
+          comment: 'MikroBot drop-tether-ban',
+        });
+      }
+    } catch {
+      /* non-fatal */
+    }
+
+    // Address-list ban with timeout (works even if lease ops fail)
+    try {
+      await this.client.put('/ip/firewall/address-list', {
+        list: banList,
+        address,
+        timeout: `${Math.max(1, minutes)}m`,
+        comment: `MikroBot tether-ban ${minutes}m`,
+      });
+      result.banListed = true;
+    } catch (err) {
+      // already exists → patch timeout
+      try {
+        const list = await this.getAddressList(banList);
+        const existing = list.find((e) => e.address === address);
+        if (existing) {
+          await this.client.patch(`/ip/firewall/address-list/${existing['.id']}`, {
+            timeout: `${Math.max(1, minutes)}m`,
+            comment: `MikroBot tether-ban ${minutes}m`,
+          });
+          result.banListed = true;
+        } else {
+          throw err;
+        }
+      } catch (e2) {
+        result.banError = e2.message;
+      }
+    }
+
+    // Lease disable
+    try {
+      let lease = await this.getDhcpLeaseByAddress(address);
+      if (lease) {
+        result.leaseId = lease['.id'];
+        result.mac = lease['active-mac-address'] || lease['mac-address'] || null;
+        if (lease.dynamic === 'true') {
+          await this.makeDhcpLeaseStatic(lease['.id']);
+          // re-fetch id after make-static (usually same)
+          lease = (await this.getDhcpLeaseByAddress(address)) || lease;
+          result.leaseId = lease['.id'];
+        }
+        await this.client.patch(`/ip/dhcp-server/lease/${lease['.id']}`, {
+          disabled: 'true',
+        });
+        result.leaseDisabled = true;
+      }
+    } catch (err) {
+      result.leaseError = err.message;
+    }
+
+    return result;
+  }
+
+  async unpunishDhcpAddress(address, { banList = 'mikrobot-tether-ban' } = {}) {
+    const result = { leaseEnabled: false, banRemoved: false };
+    try {
+      const lease = await this.getDhcpLeaseByAddress(address);
+      if (lease && lease.disabled === 'true') {
+        await this.client.patch(`/ip/dhcp-server/lease/${lease['.id']}`, {
+          disabled: 'false',
+        });
+        result.leaseEnabled = true;
+      }
+    } catch (err) {
+      result.leaseError = err.message;
+    }
+    try {
+      const list = await this.getAddressList(banList);
+      for (const e of list.filter((x) => x.address === address)) {
+        await this.removeAddressListEntry(e['.id']);
+        result.banRemoved = true;
+      }
+    } catch (err) {
+      result.banError = err.message;
+    }
+    return result;
+  }
+
+  // legacy name used earlier — map to disable
+  async setDhcpLeaseBlocked(id, blocked) {
+    // Prefer disabled; blocked unknown on this ROS
+    const { data } = await this.client.patch(`/ip/dhcp-server/lease/${id}`, {
+      disabled: blocked ? 'true' : 'false',
+    });
+    return data;
+  }
+
+  async getIpPools() {
+    const { data } = await this.client.get('/ip/pool');
+    return data;
+  }
+
+  /**
+   * Lock DHCP pool to exactly maxDevices consecutive IPs from first IP in range.
+   * e.g. 192.168.30.10-192.168.30.15 + max 5 → 192.168.30.10-192.168.30.14
+   */
+  async ensurePoolMaxDevices(poolName, maxDevices) {
+    const pools = await this.getIpPools();
+    const pool = pools.find((p) => p.name === poolName);
+    if (!pool) return { status: 'missing', poolName };
+
+    const ranges = String(pool.ranges || '');
+    // support single range a.b.c.d-a.b.c.e
+    const m = ranges.match(
+      /^(\d+\.\d+\.\d+\.)(\d+)-(\d+\.\d+\.\d+\.)(\d+)$/
+    );
+    if (!m) return { status: 'unsupported-range', ranges };
+
+    const prefixStart = m[1];
+    const startHost = Number(m[2]);
+    const prefixEnd = m[3];
+    const endHost = Number(m[4]);
+    if (prefixStart !== prefixEnd) return { status: 'cross-prefix', ranges };
+
+    const desiredEnd = startHost + maxDevices - 1;
+    const desired = `${prefixStart}${startHost}-${prefixEnd}${desiredEnd}`;
+    if (ranges === desired) {
+      return { status: 'exists', ranges, total: maxDevices };
+    }
+
+    await this.client.patch(`/ip/pool/${pool['.id']}`, { ranges: desired });
+    return {
+      status: 'updated',
+      from: ranges,
+      to: desired,
+      total: maxDevices,
+      previousEnd: endHost,
+    };
+  }
+
   // ═══════════════════════════════════
   //  SYSTEM
   // ═══════════════════════════════════
@@ -185,155 +366,193 @@ class MikroTikAPI {
     return data;
   }
 
+  /**
+   * Ensure anti-tether rules for one or more network segments.
+   * segments: [{ name, interface, subnet, commentPrefix }]
+   * commentPrefix examples: "MikroBot" (hotspot) / "MikroBot tetangga"
+   */
   async ensureAntiTether({
-    hotspotInterface = 'ether4',
-    hotspotSubnet = '192.168.20.0/24',
+    segments = [],
     tetherList = 'mikrobot-tether',
     tetherListTimeout = '10m',
+    // backward-compat single-segment args
+    hotspotInterface,
+    hotspotSubnet,
   } = {}) {
-    const result = {
-      ttlMangle: 'skip',
-      markTtl63: 'skip',
-      markTtl127: 'skip',
-      dropTtl63: 'skip',
-      dropTtl127: 'skip',
-      errors: [],
-    };
+    if (!segments.length) {
+      segments = [
+        {
+          name: 'hotspot',
+          interface: hotspotInterface || 'ether4',
+          subnet: hotspotSubnet || '192.168.20.0/24',
+          commentPrefix: 'MikroBot',
+        },
+      ];
+    }
 
-    // --- 1) postrouting change-ttl set:1 ---
-    try {
-      const mangles = await this.getMangleRules();
-      const existing = mangles.find(
-        (r) => (r.comment || '').includes('MikroBot anti-tether TTL=1')
-      );
+    const all = { segments: {}, errors: [] };
 
-      if (!existing) {
-        await this.client.put('/ip/firewall/mangle', {
-          chain: 'postrouting',
-          action: 'change-ttl',
-          'new-ttl': 'set:1',
-          'out-interface': hotspotInterface,
-          passthrough: 'yes',
-          comment: 'MikroBot anti-tether TTL=1',
+    for (const seg of segments) {
+      const prefix = seg.commentPrefix || 'MikroBot';
+      const iface = seg.interface;
+      const subnet = seg.subnet;
+      const segResult = {
+        name: seg.name,
+        ttlMangle: 'skip',
+        markTtl63: 'skip',
+        markTtl127: 'skip',
+        dropTtl63: 'skip',
+        dropTtl127: 'skip',
+        errors: [],
+      };
+
+      // --- 1) postrouting change-ttl set:1 ---
+      try {
+        const mangles = await this.getMangleRules();
+        const ttlComment = `${prefix} anti-tether TTL=1`;
+        // Match exact prefix comment; also accept legacy hotspot comment without iface
+        const existing = mangles.find((r) => {
+          const c = r.comment || '';
+          if (c === ttlComment) return true;
+          // legacy: "MikroBot anti-tether TTL=1" for hotspot only
+          if (seg.name === 'hotspot' && c === 'MikroBot anti-tether TTL=1') return true;
+          return false;
         });
-        result.ttlMangle = 'created';
-      } else {
-        const needsPatch =
-          existing['out-interface'] !== hotspotInterface ||
-          existing['new-ttl'] !== 'set:1' ||
-          existing.chain !== 'postrouting';
-        if (needsPatch) {
-          await this.client.patch(`/ip/firewall/mangle/${existing['.id']}`, {
+
+        if (!existing) {
+          await this.client.put('/ip/firewall/mangle', {
             chain: 'postrouting',
             action: 'change-ttl',
             'new-ttl': 'set:1',
-            'out-interface': hotspotInterface,
+            'out-interface': iface,
             passthrough: 'yes',
+            comment: ttlComment,
           });
-          result.ttlMangle = 'updated';
+          segResult.ttlMangle = 'created';
         } else {
-          result.ttlMangle = 'exists';
-        }
-      }
-    } catch (err) {
-      result.ttlMangle = 'error';
-      result.errors.push(`ttlMangle: ${err.message}`);
-    }
-
-    // --- 2) filter: mark offender IP to address-list, then drop ---
-    // Order matters: mark BEFORE drop so bot can map IP → hotspot user.
-    const markTargets = [
-      { ttl: 'equal:63', key: 'markTtl63', comment: 'MikroBot mark-tether TTL63' },
-      { ttl: 'equal:127', key: 'markTtl127', comment: 'MikroBot mark-tether TTL127' },
-    ];
-    const dropTargets = [
-      { ttl: 'equal:63', key: 'dropTtl63', comment: 'MikroBot detect-tether TTL63' },
-      { ttl: 'equal:127', key: 'dropTtl127', comment: 'MikroBot detect-tether TTL127' },
-    ];
-
-    let filters = [];
-    try {
-      filters = await this.getFilterRules();
-    } catch (err) {
-      result.errors.push(`filter list: ${err.message}`);
-      return result;
-    }
-
-    for (const target of markTargets) {
-      try {
-        const existing = filters.find((r) => (r.comment || '').includes(target.comment));
-        const dropSibling = filters.find((r) =>
-          (r.comment || '').includes(target.comment.replace('mark-tether', 'detect-tether'))
-        );
-
-        if (!existing) {
-          const body = {
-            chain: 'forward',
-            action: 'add-src-to-address-list',
-            'address-list': tetherList,
-            'address-list-timeout': tetherListTimeout,
-            'src-address': hotspotSubnet,
-            ttl: target.ttl,
-            comment: target.comment,
-          };
-          // Must run BEFORE drop twin, else packets never reach mark
-          if (dropSibling?.['.id']) {
-            body['place-before'] = dropSibling['.id'];
+          const needsPatch =
+            existing['out-interface'] !== iface ||
+            existing['new-ttl'] !== 'set:1' ||
+            existing.chain !== 'postrouting';
+          if (needsPatch) {
+            await this.client.patch(`/ip/firewall/mangle/${existing['.id']}`, {
+              chain: 'postrouting',
+              action: 'change-ttl',
+              'new-ttl': 'set:1',
+              'out-interface': iface,
+              passthrough: 'yes',
+              comment: ttlComment,
+            });
+            segResult.ttlMangle = 'updated';
+          } else {
+            segResult.ttlMangle = 'exists';
           }
-          await this.client.put('/ip/firewall/filter', body);
-          result[target.key] = 'created';
-        } else {
-          // If mark sits after drop, move it before drop
-          if (dropSibling?.['.id'] && existing['.id']) {
-            try {
-              // numbers after destination means move before destination in many ROS versions
-              await this.client.post('/ip/firewall/filter/move', {
-                numbers: existing['.id'],
-                destination: dropSibling['.id'],
-              });
-            } catch {
-              // ignore move errors; rule still works if already ordered
+        }
+      } catch (err) {
+        segResult.ttlMangle = 'error';
+        segResult.errors.push(`ttlMangle: ${err.message}`);
+      }
+
+      // --- 2) mark then drop TTL 63/127 ---
+      const markTargets = [
+        { ttl: 'equal:63', key: 'markTtl63', comment: `${prefix} mark-tether TTL63` },
+        { ttl: 'equal:127', key: 'markTtl127', comment: `${prefix} mark-tether TTL127` },
+      ];
+      const dropTargets = [
+        { ttl: 'equal:63', key: 'dropTtl63', comment: `${prefix} detect-tether TTL63` },
+        { ttl: 'equal:127', key: 'dropTtl127', comment: `${prefix} detect-tether TTL127` },
+      ];
+
+      let filters = [];
+      try {
+        filters = await this.getFilterRules();
+      } catch (err) {
+        segResult.errors.push(`filter list: ${err.message}`);
+        all.segments[seg.name] = segResult;
+        all.errors.push(...segResult.errors);
+        continue;
+      }
+
+      for (const target of markTargets) {
+        try {
+          const existing = filters.find((r) => (r.comment || '') === target.comment);
+          const dropSibling = filters.find(
+            (r) => (r.comment || '') === target.comment.replace('mark-tether', 'detect-tether')
+          );
+
+          if (!existing) {
+            const body = {
+              chain: 'forward',
+              action: 'add-src-to-address-list',
+              'address-list': tetherList,
+              'address-list-timeout': tetherListTimeout,
+              'src-address': subnet,
+              ttl: target.ttl,
+              comment: target.comment,
+            };
+            if (dropSibling?.['.id']) body['place-before'] = dropSibling['.id'];
+            await this.client.put('/ip/firewall/filter', body);
+            segResult[target.key] = 'created';
+          } else {
+            if (dropSibling?.['.id'] && existing['.id']) {
+              try {
+                await this.client.post('/ip/firewall/filter/move', {
+                  numbers: existing['.id'],
+                  destination: dropSibling['.id'],
+                });
+              } catch {
+                /* ignore */
+              }
             }
+            segResult[target.key] = existing.invalid === 'true' ? 'invalid' : 'exists';
           }
-          result[target.key] = existing.invalid === 'true' ? 'invalid' : 'exists';
+        } catch (err) {
+          segResult[target.key] = 'error';
+          segResult.errors.push(`${target.key}: ${err.message}`);
         }
-      } catch (err) {
-        result[target.key] = 'error';
-        result.errors.push(`${target.key}: ${err.message}`);
       }
-    }
 
-    // refresh after mark inserts
-    try {
-      filters = await this.getFilterRules();
-    } catch {
-      // keep previous
-    }
-
-    for (const target of dropTargets) {
       try {
-        const existing = filters.find((r) => (r.comment || '').includes(target.comment));
-        if (!existing) {
-          await this.client.put('/ip/firewall/filter', {
-            chain: 'forward',
-            action: 'drop',
-            'src-address': hotspotSubnet,
-            ttl: target.ttl,
-            comment: target.comment,
-          });
-          result[target.key] = 'created';
-        } else if (existing.invalid === 'true') {
-          result[target.key] = 'invalid';
-        } else {
-          result[target.key] = 'exists';
-        }
-      } catch (err) {
-        result[target.key] = 'error';
-        result.errors.push(`${target.key}: ${err.message}`);
+        filters = await this.getFilterRules();
+      } catch {
+        /* keep */
       }
+
+      for (const target of dropTargets) {
+        try {
+          const existing = filters.find((r) => (r.comment || '') === target.comment);
+          if (!existing) {
+            await this.client.put('/ip/firewall/filter', {
+              chain: 'forward',
+              action: 'drop',
+              'src-address': subnet,
+              ttl: target.ttl,
+              comment: target.comment,
+            });
+            segResult[target.key] = 'created';
+          } else if (existing.invalid === 'true') {
+            // ROS sometimes marks new rules invalid briefly; leave and report
+            segResult[target.key] = 'invalid';
+          } else {
+            segResult[target.key] = 'exists';
+          }
+        } catch (err) {
+          segResult[target.key] = 'error';
+          segResult.errors.push(`${target.key}: ${err.message}`);
+        }
+      }
+
+      all.segments[seg.name] = segResult;
+      all.errors.push(...segResult.errors.map((e) => `${seg.name}: ${e}`));
     }
 
-    return result;
+    // Flatten primary (hotspot) keys for backward-compatible logs
+    const primary = all.segments.hotspot || Object.values(all.segments)[0] || {};
+    return {
+      ...primary,
+      segments: all.segments,
+      errors: all.errors,
+    };
   }
 
   async ensureMacBindOnProfiles() {

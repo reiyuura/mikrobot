@@ -30,10 +30,17 @@ export const config = {
     pass: process.env.ROUTER_PASS || '',
   },
 
-  // Anti-tether: TTL=1 + drop TTL 63/127 + MAC bind
+  // Anti-tether segments
+  // hotspot = voucher (ether4 / 192.168.20.0/24)
+  // tetangga = WiFi tetangga plain DHCP (ether2 / 192.168.30.0/24)
   hotspotInterface: process.env.HOTSPOT_INTERFACE || 'ether4',
   hotspotSubnet: process.env.HOTSPOT_SUBNET || '192.168.20.0/24',
+  tetanggaInterface: process.env.TETANGGA_INTERFACE || 'ether2',
+  tetanggaSubnet: process.env.TETANGGA_SUBNET || '192.168.30.0/24',
+  tetanggaPoolName: process.env.TETANGGA_POOL_NAME || 'pool-tetangga',
+  tetanggaMaxDevices: Number(process.env.TETANGGA_MAX_DEVICES) || 5,
   antiTether: parseBool(process.env.ANTI_TETHER, true),
+  antiTetherTetangga: parseBool(process.env.ANTI_TETHER_TETANGGA, true),
 
   // Tether abuse detect + notify (mutable via /tether)
   tetherList: process.env.TETHER_LIST || 'mikrobot-tether',
@@ -46,6 +53,29 @@ export const config = {
   usernameLength: Number(process.env.USERNAME_LENGTH) || 6,
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',
 };
+
+/** Segments protected by anti-tether rules. */
+export function getAntiTetherSegments() {
+  const segs = [
+    {
+      name: 'hotspot',
+      interface: config.hotspotInterface,
+      subnet: config.hotspotSubnet,
+      commentPrefix: 'MikroBot',
+      kind: 'hotspot',
+    },
+  ];
+  if (config.antiTetherTetangga) {
+    segs.push({
+      name: 'tetangga',
+      interface: config.tetanggaInterface,
+      subnet: config.tetanggaSubnet,
+      commentPrefix: 'MikroBot tetangga',
+      kind: 'dhcp',
+    });
+  }
+  return segs;
+}
 
 /** Snapshot of env defaults (before DB override). */
 export const tetherDefaults = {
@@ -87,6 +117,7 @@ export function applyTetherSettingsFromDb() {
 export function getTetherRuntime() {
   return {
     enabled: config.antiTether,
+    tetanggaEnabled: config.antiTetherTetangga,
     pollSeconds: config.tetherPollSeconds,
     cooldownMin: config.tetherNotifyCooldownMin,
     punishMin: config.tetherPunishMin,
@@ -95,6 +126,10 @@ export function getTetherRuntime() {
     list: config.tetherList,
     interface: config.hotspotInterface,
     subnet: config.hotspotSubnet,
+    tetanggaInterface: config.tetanggaInterface,
+    tetanggaSubnet: config.tetanggaSubnet,
+    tetanggaMaxDevices: config.tetanggaMaxDevices,
+    segments: getAntiTetherSegments().map((s) => s.name),
   };
 }
 

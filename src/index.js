@@ -1,6 +1,6 @@
 import { createBot } from './bot.js';
 import { mikrotik } from './mikrotik.js';
-import { config, applyTetherSettingsFromDb, getTetherRuntime } from './config.js';
+import { config, applyTetherSettingsFromDb, getTetherRuntime, getAntiTetherSegments } from './config.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
 import { registerStart } from './commands/start.js';
 import { registerAddUser } from './commands/adduser.js';
@@ -54,17 +54,35 @@ async function main() {
     if (config.antiTether) {
       try {
         console.log('🛡  Ensuring anti-tether rules...');
+        const segments = getAntiTetherSegments();
         const anti = await mikrotik.ensureAntiTether({
-          hotspotInterface: config.hotspotInterface,
-          hotspotSubnet: config.hotspotSubnet,
+          segments,
           tetherList: config.tetherList,
           tetherListTimeout: config.tetherListTimeout,
         });
-        console.log(
-          `   TTL mangle: ${anti.ttlMangle} | mark63: ${anti.markTtl63} | mark127: ${anti.markTtl127} | drop63: ${anti.dropTtl63} | drop127: ${anti.dropTtl127}`
-        );
+        for (const [name, seg] of Object.entries(anti.segments || {})) {
+          console.log(
+            `   [${name}] TTL: ${seg.ttlMangle} | mark63: ${seg.markTtl63} | drop63: ${seg.dropTtl63} | mark127: ${seg.markTtl127} | drop127: ${seg.dropTtl127}`
+          );
+        }
         if (anti.errors.length) {
           console.warn('   anti-tether warnings:', anti.errors.join('; '));
+        }
+
+        // Lock tetangga DHCP pool to max devices (default 5)
+        if (config.antiTetherTetangga) {
+          try {
+            const pool = await mikrotik.ensurePoolMaxDevices(
+              config.tetanggaPoolName,
+              config.tetanggaMaxDevices
+            );
+            console.log(
+              `   [tetangga] pool ${config.tetanggaPoolName}: ${pool.status}` +
+                (pool.to ? ` ${pool.from} → ${pool.to}` : pool.ranges ? ` ${pool.ranges}` : '')
+            );
+          } catch (err) {
+            console.warn('   pool lock warning:', err.message);
+          }
         }
 
         const mac = await mikrotik.ensureMacBindOnProfiles();
