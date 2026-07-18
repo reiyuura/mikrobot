@@ -41,9 +41,10 @@ export const config = {
   tetanggaMaxDevices: Number(process.env.TETANGGA_MAX_DEVICES) || 5,
   antiTether: parseBool(process.env.ANTI_TETHER, true),
   antiTetherTetangga: parseBool(process.env.ANTI_TETHER_TETANGGA, true),
-  // HARD detect TTL63/127 di tetangga sering false-positive (HP normal).
-  // Default SOFT: TTL=1 + pool max saja, TANPA mark/drop/ban.
-  // Set TETHER_TETANGGA_HARD=true hanya kalau yakin butuh punish per-IP.
+  // HARD detect TTL63/127 sering false-positive (HP normal, Android 10, VPN).
+  // Default SOFT keduanya: TTL=1 (+ MAC bind hotspot / pool max tetangga), TANPA mark/drop/ban.
+  // Set true hanya kalau sadar risk ban orang normal.
+  tetherHotspotHard: parseBool(process.env.TETHER_HOTSPOT_HARD, false),
   tetherTetanggaHard: parseBool(process.env.TETHER_TETANGGA_HARD, false),
 
   // Tether abuse detect + notify (mutable via /tether)
@@ -52,7 +53,8 @@ export const config = {
   tetherNotifyCooldownMin: Number(process.env.TETHER_NOTIFY_COOLDOWN_MIN) || 10,
   tetherPunishMin: Number(process.env.TETHER_PUNISH_MIN) || 5,
   tetherListTimeout: process.env.TETHER_LIST_TIMEOUT || '10m',
-  tetherAutoPunish: parseBool(process.env.TETHER_AUTO_PUNISH, true),
+  // Default false — soft mode. HARD + autoPunish true = risk ban massal.
+  tetherAutoPunish: parseBool(process.env.TETHER_AUTO_PUNISH, false),
 
   // Secondary AP/router (e.g. TL-WR840N) — traffic NAT lewat sini, jangan ban
   // Comma-separated. Default: WR840N tetangga.
@@ -87,8 +89,8 @@ export function getAntiTetherSegments() {
       subnet: config.hotspotSubnet,
       commentPrefix: 'MikroBot',
       kind: 'hotspot',
-      // hotspot: full TTL + mark/drop (voucher path)
-      hardDetect: true,
+      // soft default: TTL=1 + MAC bind. hardDetect=true = mark/drop TTL63 (risk ban A10/VPN)
+      hardDetect: config.tetherHotspotHard,
     },
   ];
   if (config.antiTetherTetangga) {
@@ -98,7 +100,7 @@ export function getAntiTetherSegments() {
       subnet: config.tetanggaSubnet,
       commentPrefix: 'MikroBot tetangga',
       kind: 'dhcp',
-      // soft default: TTL=1 only. hardDetect=true adds mark/drop (false-positive risk)
+      // soft default: TTL=1 + pool max. hardDetect=true = mark/drop/ban (risk)
       hardDetect: config.tetherTetanggaHard,
     });
   }
@@ -146,6 +148,7 @@ export function getTetherRuntime() {
   return {
     enabled: config.antiTether,
     tetanggaEnabled: config.antiTetherTetangga,
+    hotspotHard: config.tetherHotspotHard,
     tetanggaHard: config.tetherTetanggaHard,
     pollSeconds: config.tetherPollSeconds,
     cooldownMin: config.tetherNotifyCooldownMin,

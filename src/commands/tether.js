@@ -29,8 +29,9 @@ function statusText() {
   msg += `Status     : <b>${r.enabled ? 'ON' : 'OFF'}</b>\n`;
   msg += `Segments   : <code>${(r.segments || []).join(', ') || '-'}</code>\n`;
   msg += `Hotspot    : <code>${r.interface}</code> / <code>${r.subnet}</code>\n`;
+  msg += `  Mode     : <b>${r.hotspotHard ? 'HARD (mark+ban)' : 'SOFT (TTL=1+MAC)'}</b>\n`;
   msg += `Tetangga   : <b>${r.tetanggaEnabled ? 'ON' : 'OFF'}</b> · <code>${r.tetanggaInterface}</code> / <code>${r.tetanggaSubnet}</code>\n`;
-  msg += `Mode       : <b>${r.tetanggaHard ? 'HARD (mark+ban)' : 'SOFT (TTL=1 only)'}</b>\n`;
+  msg += `  Mode     : <b>${r.tetanggaHard ? 'HARD (mark+ban)' : 'SOFT (TTL=1+pool)'}</b>\n`;
   msg += `Max device : <code>${r.tetanggaMaxDevices}</code> (pool tetangga)\n`;
   msg += `Whitelist  : <code>${(r.whitelistIps || []).join(', ') || '-'}</code>\n`;
   if ((r.whitelistMacs || []).length) {

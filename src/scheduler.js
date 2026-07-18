@@ -323,25 +323,30 @@ async function checkTetherAbuse() {
       if (config.tetherAutoPunish) {
         try {
           if (hit.kind === 'hotspot') {
-            const kicked = await mikrotik.kickUserByName(hit.username);
-            punishAction = kicked > 0 ? 'kick' : 'kick-miss';
+            // Soft mode hotspot: jangan kick/disable (TTL63 false-positive, Android 10/VPN)
+            if (!config.tetherHotspotHard) {
+              punishAction = 'soft-skip';
+            } else {
+              const kicked = await mikrotik.kickUserByName(hit.username);
+              punishAction = kicked > 0 ? 'kick' : 'kick-miss';
 
-            const mtUser = await mikrotik.getUserByName(hit.username);
-            if (mtUser) {
-              const until = new Date(Date.now() + config.tetherPunishMin * 60 * 1000);
-              punishUntilText = now()
-                .add(config.tetherPunishMin, 'minute')
-                .format('HH:mm [WIB]');
-              const untilIso = until.toISOString();
-              const originalComment = mtUser.comment || '';
-              const banTag = `TETHER-BAN until ${until.toISOString()}`;
-              const newComment = originalComment.includes('TETHER-BAN')
-                ? originalComment.replace(/TETHER-BAN until [^\|]+/, banTag)
-                : `${originalComment}${originalComment ? ' | ' : ''}${banTag}`;
+              const mtUser = await mikrotik.getUserByName(hit.username);
+              if (mtUser) {
+                const until = new Date(Date.now() + config.tetherPunishMin * 60 * 1000);
+                punishUntilText = now()
+                  .add(config.tetherPunishMin, 'minute')
+                  .format('HH:mm [WIB]');
+                const untilIso = until.toISOString();
+                const originalComment = mtUser.comment || '';
+                const banTag = `TETHER-BAN until ${until.toISOString()}`;
+                const newComment = originalComment.includes('TETHER-BAN')
+                  ? originalComment.replace(/TETHER-BAN until [^\|]+/, banTag)
+                  : `${originalComment}${originalComment ? ' | ' : ''}${banTag}`;
 
-              await mikrotik.setUserDisabled(mtUser['.id'], true, newComment);
-              database.setTetherPunish(hit.username, untilIso, originalComment);
-              punishAction = kicked > 0 ? 'kick+disable' : 'disable';
+                await mikrotik.setUserDisabled(mtUser['.id'], true, newComment);
+                database.setTetherPunish(hit.username, untilIso, originalComment);
+                punishAction = kicked > 0 ? 'kick+disable' : 'disable';
+              }
             }
           } else if (hit.kind === 'dhcp') {
             // Soft mode tetangga: jangan ban (TTL63 false-positive)
