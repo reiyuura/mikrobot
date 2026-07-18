@@ -1,6 +1,6 @@
 # 🤖 MikroBot
 
-Telegram Bot untuk manajemen **Hotspot MikroTik** via REST API. Buat, kelola, dan hapus user hotspot langsung dari Telegram.
+Telegram Bot untuk manajemen **Hotspot MikroTik** via REST API. Buat, kelola, dan hapus user hotspot langsung dari Telegram — plus **anti-tether** untuk voucher & WiFi tetangga.
 
 Pengganti [MiHKMon](https://github.com/laksa19/mihkmon) yang sudah outdated dan buggy di RouterOS 7.x.
 
@@ -18,6 +18,7 @@ Pengganti [MiHKMon](https://github.com/laksa19/mihkmon) yang sudah outdated dan 
 | `/active` | Lihat user yang sedang online |
 | `/info` | Info server (CPU, RAM, uptime) |
 | `/income` | Laporan pendapatan (harian/mingguan/bulanan) |
+| `/tether` | Status & setting anti-tether (runtime) |
 | `/reboot` | Reboot MikroTik (dengan konfirmasi) |
 | `/help` | Panduan penggunaan |
 
@@ -29,9 +30,94 @@ Pengganti [MiHKMon](https://github.com/laksa19/mihkmon) yang sudah outdated dan 
 - 💰 **Income tracking** — pendapatan dihitung saat user pertama kali login
 - 🎫 **Batch Voucher** — generate banyak user sekaligus
 - 📋 **Username = Password** — format simple, tinggal copy
-- 📊 **Manual & Auto** — bisa buat user custom atau auto generate
+- 🛡 **Anti-tether** — blok HP share hotspot (voucher + WiFi tetangga)
+- 📡 **Multi-segment** — hotspot voucher + plain DHCP tetangga
 - 🌐 **WebFig Proxy** — akses MikroTik WebFig dari mana saja via HTTPS
 - 🔄 **Reboot** — restart router dari Telegram dengan auto status check
+
+---
+
+## 🛡 Anti-Tether
+
+Blok user yang **share / tethering ulang** internet (HP → hotspot → HP lain).
+
+### Cara kerja (3 layer)
+
+```
+1) TTL=1  → paket ke client di-set TTL 1 (HP di belakang gak bisa route)
+2) Drop   → paket masuk dengan TTL 63/127 (ciri Android/iOS tether) di-drop
+3) Mark   → IP offender masuk address-list → bot notif + punish
+```
+
+| Segment | Interface (default) | Subnet | Identitas | Punish |
+|---------|---------------------|--------|-----------|--------|
+| **Hotspot voucher** | `ether4` | `192.168.20.0/24` | username hotspot | kick session + disable user N menit |
+| **WiFi tetangga** | `ether2` | `192.168.30.0/24` | DHCP lease (IP/MAC) | ban IP + disable lease N menit |
+
+### Topologi tetangga (recommended)
+
+```
+Internet
+   └── MikroTik
+          ├── ether4  → Hotspot voucher (192.168.20.0/24)
+          └── ether2  → WiFi tetangga (192.168.30.0/24)
+                          └── AP TL-WR840N (mode AP/bridge, DHCP MATI)
+                                 ├── HP tetangga .10
+                                 ├── AP sendiri  .11  ← whitelist
+                                 ├── HP tetangga .12
+                                 └── HP tetangga .14
+```
+
+> **Penting:** AP secondary (TL-WR840N dll) harus **mode Access Point / bridge**, DHCP server di AP **mati**.  
+> Client harus dapat IP **langsung dari MikroTik** biar anti-tether & limit 5 device akurat.  
+> Kalau AP masih NAT, MikroTik cuma liat 1 IP (gateway) → gak bisa deteksi tether per-HP.
+
+### Whitelist secondary AP
+
+Router/AP yang cuma nerusin WiFi (bukan client) di-whitelist biar **gak kena ban**:
+
+| Env | Contoh | Fungsi |
+|-----|--------|--------|
+| `TETHER_WHITELIST_IPS` | `192.168.30.11` | IP AP di DHCP MikroTik |
+| `TETHER_WHITELIST_MACS` | `40:3F:8C:DF:43:EA` | MAC AP |
+
+Bot + firewall MikroTik skip ban/mark/drop untuk IP/MAC ini.
+
+### Limit 5 device tetangga
+
+Pool DHCP `pool-tetangga` di-lock ke **5 IP** (default `.10`–`.14`).  
+Device ke-6 **gak dapat IP**.
+
+### Command `/tether`
+
+```
+/tether                 → status + tombol
+/tether on | off        → nyala/mati monitor
+/tether poll <detik>    → interval cek (10–3600)
+/tether cooldown <m>    → jeda notif admin
+/tether punish <m>      → lama ban
+/tether autopunish on|off
+/tether hits [user]     → riwayat hit
+/tether unban <user>    → lepas ban sekarang
+/tether reset [user|all]
+/tether scan            → scan manual
+/tether help
+```
+
+Setting runtime disimpan di `data/mikrobot.json` (survive restart).
+
+### Notif & punish
+
+| Siapa | Apa yang terjadi |
+|-------|------------------|
+| **Admin Telegram** | Notif: segment, IP, MAC, hit count, aksi |
+| **User voucher** | Kick + disable account N menit (internet mati = "notif") |
+| **Device tetangga** | IP ban list + lease disable N menit |
+| **Setelah ban habis** | Auto re-enable / unban |
+
+Default: poll **30s**, punish **5 menit**, cooldown notif **10 menit**.
+
+---
 
 ## 💰 Harga Default
 
@@ -42,7 +128,8 @@ Pengganti [MiHKMon](https://github.com/laksa19/mihkmon) yang sudah outdated dan 
 | 7 Hari | Rp 15.000 | 7 hari | ↓20M / ↑4M |
 | Keluarga | Rp 50.000 | 30 hari | ↓20M / ↑5M |
 
-> Edit `src/utils.js` untuk menyesuaikan harga dan profile.
+> Edit `src/utils.js` untuk menyesuaikan harga dan profile.  
+> Profile voucher juga di-set **MAC bind on-login** (1 device per voucher).
 
 ## 📋 Persyaratan
 
@@ -150,7 +237,7 @@ curl -u mikrobot:PASSWORD http://10.10.10.2/rest/system/resource
 
 ```bash
 # Clone repository
-git clone https://github.com/username/mikrobot.git /opt/mikrobot
+git clone https://github.com/reiyuura/mikrobot.git /opt/mikrobot
 cd /opt/mikrobot
 
 # Install dependencies
@@ -177,18 +264,53 @@ ROUTER_PASS=your_password
 # Settings
 USERNAME_LENGTH=6
 TIMEZONE=Asia/Jakarta
+
+# Anti-tether hotspot voucher
+ANTI_TETHER=true
+HOTSPOT_INTERFACE=ether4
+HOTSPOT_SUBNET=192.168.20.0/24
+
+# Anti-tether WiFi tetangga (plain DHCP)
+ANTI_TETHER_TETANGGA=true
+TETANGGA_INTERFACE=ether2
+TETANGGA_SUBNET=192.168.30.0/24
+TETANGGA_POOL_NAME=pool-tetangga
+TETANGGA_MAX_DEVICES=5
+
+# Whitelist AP secondary (TL-WR840N dll)
+TETHER_WHITELIST_IPS=192.168.30.11
+TETHER_WHITELIST_MACS=40:3F:8C:DF:43:EA
+
+# Tether monitor
+TETHER_LIST=mikrobot-tether
+TETHER_LIST_TIMEOUT=10m
+TETHER_POLL_SECONDS=30
+TETHER_NOTIFY_COOLDOWN_MIN=10
+TETHER_PUNISH_MIN=5
+TETHER_AUTO_PUNISH=true
 ```
 
 | Variable | Deskripsi |
 |----------|-----------|
 | `BOT_TOKEN` | Token dari @BotFather |
-| `ADMIN_IDS` | Telegram user ID admin (pisahkan dengan koma untuk multiple admin) |
+| `ADMIN_IDS` | Telegram user ID admin (pisah koma untuk multi admin) |
 | `ROUTER_HOST` | IP MikroTik di WireGuard network |
 | `ROUTER_PORT` | Port REST API (default: 80) |
-| `ROUTER_USER` | Username API di MikroTik |
-| `ROUTER_PASS` | Password API |
-| `USERNAME_LENGTH` | Panjang username yang di-generate (default: 6) |
-| `TIMEZONE` | Timezone untuk format tanggal |
+| `ROUTER_USER` / `ROUTER_PASS` | Kredensial API MikroTik |
+| `USERNAME_LENGTH` | Panjang username generate (default: 6) |
+| `TIMEZONE` | Timezone format tanggal |
+| `ANTI_TETHER` | Master switch anti-tether |
+| `HOTSPOT_INTERFACE` / `HOTSPOT_SUBNET` | Segment voucher |
+| `ANTI_TETHER_TETANGGA` | ON/OFF anti-tether WiFi tetangga |
+| `TETANGGA_INTERFACE` / `TETANGGA_SUBNET` | Segment DHCP tetangga |
+| `TETANGGA_POOL_NAME` | Nama IP pool DHCP tetangga |
+| `TETANGGA_MAX_DEVICES` | Max IP di pool (default: 5) |
+| `TETHER_WHITELIST_IPS` | IP AP secondary, koma-separated |
+| `TETHER_WHITELIST_MACS` | MAC AP secondary, koma-separated |
+| `TETHER_POLL_SECONDS` | Interval cek offender (default: 30) |
+| `TETHER_PUNISH_MIN` | Lama ban (menit, default: 5) |
+| `TETHER_NOTIFY_COOLDOWN_MIN` | Jeda notif admin per user (default: 10) |
+| `TETHER_AUTO_PUNISH` | Auto kick/ban saat deteksi tether |
 
 > 💡 Dapatkan Telegram ID kamu dengan mengirim pesan ke [@userinfobot](https://t.me/userinfobot)
 
@@ -204,6 +326,12 @@ pm2 start src/index.js --name mikrobot
 pm2 startup
 pm2 save
 ```
+
+Saat boot, bot **auto-ensure**:
+1. Rule anti-tether hotspot + tetangga (idempotent)
+2. Lock pool tetangga ke max devices
+3. Whitelist AP secondary
+4. MAC bind di profile voucher
 
 ### 5. WireGuard Watchdog (Recommended)
 
@@ -258,6 +386,11 @@ Tambahkan baris ini:
 - Income **hanya dihitung saat user pertama kali login** ke hotspot
 - Breakdown per profile: jumlah × harga
 
+### Anti-Tether
+- Kirim `/tether` → lihat status multi-segment + whitelist
+- Toggle ON/OFF, poll, punish dari keyboard atau command
+- Kalau ada yang share: admin dapat notif, offender di-ban sementara
+
 ### Auto-Cleanup
 - Bot cek setiap **1 jam** apakah ada user yang masa aktifnya sudah habis
 - User expired otomatis **di-kick + dihapus** dari MikroTik
@@ -286,14 +419,15 @@ export const PROFILES = {
 ## 🏗 Arsitektur
 
 ```
-┌──────────────┐     ┌───────────────────┐     ┌──────────────┐
-│ Admin        │     │  VPS Ubuntu       │     │  MikroTik    │
-│ (Telegram)   │────▶│  MikroBot (Node)  │────▶│  RouterOS 7  │
-│              │◀────│  Grammy + Axios   │◀────│  REST API    │
-└──────────────┘     │  WireGuard Client │     │  WireGuard   │
-                     │  ⏰ Scheduler      │     └──────────────┘
-                     └───────────────────┘
-                      10.10.10.1                10.10.10.2
+┌──────────────┐     ┌───────────────────┐     ┌──────────────────────────┐
+│ Admin        │     │  VPS Ubuntu       │     │  MikroTik RouterOS 7     │
+│ (Telegram)   │────▶│  MikroBot (Node)  │────▶│  REST API                │
+│              │◀────│  Grammy + Axios   │◀────│  WireGuard 10.10.10.2    │
+└──────────────┘     │  WireGuard Client │     │                          │
+                     │  ⏰ Scheduler      │     │  ether4 → Hotspot        │
+                     │  🛡 Tether poll    │     │  ether2 → DHCP tetangga  │
+                     └───────────────────┘     │       └── AP (bridge)    │
+                      10.10.10.1               └──────────────────────────┘
 ```
 
 ### Alur Income
@@ -302,6 +436,17 @@ User dibuat → Belum login (income: 0)
            → Pertama login ke hotspot
            → Scheduler deteksi di active sessions
            → Income tercatat ✅
+```
+
+### Alur Anti-Tether
+```
+Client share hotspot
+  → paket TTL 63/127
+  → filter mark → address-list mikrobot-tether
+  → filter drop (traffic mati)
+  → bot poll 30s → map IP → user/lease
+  → notif admin + punish (kick/ban)
+  → setelah N menit → auto restore
 ```
 
 ## 📁 Struktur Project
@@ -313,36 +458,37 @@ mikrobot/
 ├── .gitignore
 ├── README.md
 ├── scripts/
-│   └── wg-watchdog.sh    # Auto-recovery WireGuard tunnel
-├── hotspot/               # Template login MikroTik
-│   ├── login.html         # Login (2 tab: Voucher + Manual)
-│   ├── alogin.html        # After login + status
-│   ├── status.html        # Status koneksi
-│   ├── logout.html        # Logout + summary
-│   ├── error.html         # Error page
-│   ├── redirect.html      # Redirect page
-│   └── md5.js             # CHAP authentication
+│   └── wg-watchdog.sh       # Auto-recovery WireGuard tunnel
+├── hotspot/                 # Template login MikroTik
+│   ├── login.html
+│   ├── alogin.html
+│   ├── status.html
+│   ├── logout.html
+│   ├── error.html
+│   ├── redirect.html
+│   └── md5.js
 ├── src/
-│   ├── index.js           # Entry point
-│   ├── bot.js             # Grammy bot + admin middleware
-│   ├── config.js          # Environment config
-│   ├── mikrotik.js        # MikroTik REST API client
-│   ├── database.js        # JSON-based logging + income tracking
-│   ├── scheduler.js       # Auto-cleanup + activation checker
-│   ├── utils.js           # Helpers + profile/price definitions
+│   ├── index.js             # Entry point + ensure anti-tether on boot
+│   ├── bot.js               # Grammy bot + admin middleware
+│   ├── config.js            # Env + tether runtime settings
+│   ├── mikrotik.js          # REST client, anti-tether, whitelist, pool
+│   ├── database.js          # JSON DB: users, income, tether state
+│   ├── scheduler.js         # Cleanup + tether poll/punish/restore
+│   ├── utils.js             # Helpers + profile/price
 │   └── commands/
-│       ├── start.js       # /start
-│       ├── adduser.js     # /adduser (auto & manual)
-│       ├── voucher.js     # /voucher
-│       ├── listuser.js    # /listuser
-│       ├── deleteuser.js  # /deleteuser
-│       ├── activeuser.js  # /active
-│       ├── serverinfo.js  # /info
-│       ├── income.js      # /income
-│       ├── reboot.js      # /reboot
-│       └── help.js        # /help
+│       ├── start.js
+│       ├── adduser.js
+│       ├── voucher.js
+│       ├── listuser.js
+│       ├── deleteuser.js
+│       ├── activeuser.js
+│       ├── serverinfo.js
+│       ├── income.js
+│       ├── tether.js        # /tether settings
+│       ├── reboot.js
+│       └── help.js
 └── data/
-    └── mikrobot.json      # Database (auto-created)
+    └── mikrobot.json        # Database (gitignored, auto-created)
 ```
 
 ## 🔐 Keamanan
@@ -352,6 +498,7 @@ mikrobot/
 - Semua traffic terenkripsi melalui WireGuard tunnel
 - Gunakan user API terpisah di MikroTik (jangan pakai admin)
 - WireGuard watchdog auto-recovery jika tunnel putus (CGNAT)
+- Secondary AP di-whitelist biar gak salah-ban; client di belakang AP tetap di-monitor kalau dapat IP dari MikroTik
 
 ## 🌐 WebFig Reverse Proxy (Opsional)
 
@@ -440,6 +587,16 @@ Buka `https://mikro.domain.com` di browser → masukkan basic auth → WebFig mu
 allow 123.456.789.0/24;  # IP kantor/rumah
 deny all;
 ```
+
+## 📝 Changelog (ringkas)
+
+| Commit | Isi |
+|--------|-----|
+| `13a3502` | Whitelist secondary AP (TL-WR840N) dari ban tether |
+| `bab3e34` | Anti-tether WiFi tetangga + lock pool 5 device |
+| `51b3eda` | Command `/tether` runtime settings |
+| `2a29ae3` | Notif admin + punish (kick/disable) |
+| `f0c7fe1` | Anti-tether hotspot voucher (TTL + MAC bind) |
 
 ## 📄 Lisensi
 
