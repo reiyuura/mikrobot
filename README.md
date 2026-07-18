@@ -52,7 +52,8 @@ Blok user yang **share / tethering ulang** internet (HP → hotspot → HP lain)
 | Segment | Interface (default) | Subnet | Identitas | Punish |
 |---------|---------------------|--------|-----------|--------|
 | **Hotspot voucher** | `ether4` | `192.168.20.0/24` | username hotspot | kick session + disable user N menit |
-| **WiFi tetangga** | `ether2` | `192.168.30.0/24` | DHCP lease (IP/MAC) | ban IP + disable lease N menit |
+| **WiFi tetangga (SOFT default)** | `ether2` | `192.168.30.0/24` | DHCP lease (IP/MAC) | **TTL=1 + max 5 device only** — mark/drop/ban OFF (false-positive) |
+| **WiFi tetangga (HARD optional)** | same | same | same | mark+drop TTL63/127 + ban — set `TETHER_TETANGGA_HARD=true` (risk) |
 
 ### Topologi tetangga (recommended)
 
@@ -71,6 +72,16 @@ Internet
 > **Penting:** AP secondary (TL-WR840N dll) harus **mode Access Point / bridge**, DHCP server di AP **mati**.  
 > Client harus dapat IP **langsung dari MikroTik** biar anti-tether & limit 5 device akurat.  
 > Kalau AP masih NAT, MikroTik cuma liat 1 IP (gateway) → gak bisa deteksi tether per-HP.
+
+
+### Mode SOFT vs HARD (tetangga)
+
+| Mode | Env | Efek |
+|------|-----|------|
+| **SOFT** (default) | `TETHER_TETANGGA_HARD=false` | TTL=1 ke client + pool max 5. **Tanpa** mark/drop/ban. Aman, jarang false-positive. |
+| **HARD** | `TETHER_TETANGGA_HARD=true` | + mark/drop TTL 63/127 + ban. Sering **salah deteksi** HP normal (TTL 63). Hanya nyalain kalau sadar risikonya. |
+
+> Hotspot voucher tetap **HARD penuh** (TTL + mark/drop + kick) — di situ lebih akurat.
 
 ### Whitelist secondary AP
 

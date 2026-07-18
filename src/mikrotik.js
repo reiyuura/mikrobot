@@ -454,6 +454,8 @@ class MikroTikAPI {
       }
 
       // --- 2) mark then drop TTL 63/127 ---
+      // hardDetect=false (tetangga soft): TTL=1 only — mark/drop TTL63 false-positive massal di client normal
+      const hardDetect = Boolean(seg.hardDetect);
       const markTargets = [
         { ttl: 'equal:63', key: 'markTtl63', comment: `${prefix} mark-tether TTL63` },
         { ttl: 'equal:127', key: 'markTtl127', comment: `${prefix} mark-tether TTL127` },
@@ -470,6 +472,34 @@ class MikroTikAPI {
         segResult.errors.push(`filter list: ${err.message}`);
         all.segments[seg.name] = segResult;
         all.errors.push(...segResult.errors);
+        continue;
+      }
+
+      // Soft mode: force-disable mark/drop for this segment (keep rules for optional hard later)
+      if (!hardDetect) {
+        for (const target of [...markTargets, ...dropTargets]) {
+          const existing = filters.find((r) => (r.comment || '') === target.comment);
+          if (!existing) {
+            segResult[target.key] = 'soft-off';
+            continue;
+          }
+          try {
+            if (existing.disabled !== 'true') {
+              await this.client.patch(`/ip/firewall/filter/${existing['.id']}`, {
+                disabled: 'true',
+              });
+              segResult[target.key] = 'soft-disabled';
+            } else {
+              segResult[target.key] = 'soft-off';
+            }
+          } catch (err) {
+            segResult[target.key] = 'error';
+            segResult.errors.push(`${target.key}: ${err.message}`);
+          }
+        }
+        // also keep drop-tether-ban disabled when no hard segment needs it
+        all.segments[seg.name] = segResult;
+        all.errors.push(...segResult.errors.map((e) => `${seg.name}: ${e}`));
         continue;
       }
 

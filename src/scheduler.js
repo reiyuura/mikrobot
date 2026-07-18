@@ -344,19 +344,24 @@ async function checkTetherAbuse() {
               punishAction = kicked > 0 ? 'kick+disable' : 'disable';
             }
           } else if (hit.kind === 'dhcp') {
-            // Ban IP via address-list + disable lease (if any)
-            const res = await mikrotik.punishDhcpAddress(hit.address, {
-              minutes: config.tetherPunishMin,
-            });
-            const until = new Date(Date.now() + config.tetherPunishMin * 60 * 1000);
-            punishUntilText = now()
-              .add(config.tetherPunishMin, 'minute')
-              .format('HH:mm [WIB]');
-            database.setTetherPunish(hit.username, until.toISOString(), null);
-            if (res.banListed && res.leaseDisabled) punishAction = 'ban+disable-lease';
-            else if (res.banListed) punishAction = 'ip-ban';
-            else if (res.leaseDisabled) punishAction = 'disable-lease';
-            else punishAction = `dhcp-fail: ${res.banError || res.leaseError || 'unknown'}`;
+            // Soft mode tetangga: jangan ban (TTL63 false-positive)
+            if (!config.tetherTetanggaHard) {
+              punishAction = 'soft-skip';
+            } else {
+              // Ban IP via address-list + disable lease (if any)
+              const res = await mikrotik.punishDhcpAddress(hit.address, {
+                minutes: config.tetherPunishMin,
+              });
+              const until = new Date(Date.now() + config.tetherPunishMin * 60 * 1000);
+              punishUntilText = now()
+                .add(config.tetherPunishMin, 'minute')
+                .format('HH:mm [WIB]');
+              database.setTetherPunish(hit.username, until.toISOString(), null);
+              if (res.banListed && res.leaseDisabled) punishAction = 'ban+disable-lease';
+              else if (res.banListed) punishAction = 'ip-ban';
+              else if (res.leaseDisabled) punishAction = 'disable-lease';
+              else punishAction = `dhcp-fail: ${res.banError || res.leaseError || 'unknown'}`;
+            }
           }
         } catch (err) {
           console.error(`⚠️  Tether punish failed ${hit.username}:`, err.message);

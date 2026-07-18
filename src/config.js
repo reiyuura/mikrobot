@@ -41,6 +41,10 @@ export const config = {
   tetanggaMaxDevices: Number(process.env.TETANGGA_MAX_DEVICES) || 5,
   antiTether: parseBool(process.env.ANTI_TETHER, true),
   antiTetherTetangga: parseBool(process.env.ANTI_TETHER_TETANGGA, true),
+  // HARD detect TTL63/127 di tetangga sering false-positive (HP normal).
+  // Default SOFT: TTL=1 + pool max saja, TANPA mark/drop/ban.
+  // Set TETHER_TETANGGA_HARD=true hanya kalau yakin butuh punish per-IP.
+  tetherTetanggaHard: parseBool(process.env.TETHER_TETANGGA_HARD, false),
 
   // Tether abuse detect + notify (mutable via /tether)
   tetherList: process.env.TETHER_LIST || 'mikrobot-tether',
@@ -83,6 +87,8 @@ export function getAntiTetherSegments() {
       subnet: config.hotspotSubnet,
       commentPrefix: 'MikroBot',
       kind: 'hotspot',
+      // hotspot: full TTL + mark/drop (voucher path)
+      hardDetect: true,
     },
   ];
   if (config.antiTetherTetangga) {
@@ -92,6 +98,8 @@ export function getAntiTetherSegments() {
       subnet: config.tetanggaSubnet,
       commentPrefix: 'MikroBot tetangga',
       kind: 'dhcp',
+      // soft default: TTL=1 only. hardDetect=true adds mark/drop (false-positive risk)
+      hardDetect: config.tetherTetanggaHard,
     });
   }
   return segs;
@@ -138,6 +146,7 @@ export function getTetherRuntime() {
   return {
     enabled: config.antiTether,
     tetanggaEnabled: config.antiTetherTetangga,
+    tetanggaHard: config.tetherTetanggaHard,
     pollSeconds: config.tetherPollSeconds,
     cooldownMin: config.tetherNotifyCooldownMin,
     punishMin: config.tetherPunishMin,
