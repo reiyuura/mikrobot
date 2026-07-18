@@ -473,6 +473,10 @@ class MikroTikAPI {
         continue;
       }
 
+      // Exclude secondary AP whitelist from mark/drop (NAT gateway / TL-WR840N)
+      const wlList = '!mikrobot-tether-whitelist';
+      const applyWlExclude = seg.name === 'tetangga' || prefix.includes('tetangga');
+
       for (const target of markTargets) {
         try {
           const existing = filters.find((r) => (r.comment || '') === target.comment);
@@ -490,10 +494,24 @@ class MikroTikAPI {
               ttl: target.ttl,
               comment: target.comment,
             };
+            if (applyWlExclude) body['src-address-list'] = wlList;
             if (dropSibling?.['.id']) body['place-before'] = dropSibling['.id'];
             await this.client.put('/ip/firewall/filter', body);
             segResult[target.key] = 'created';
           } else {
+            // Patch exclude whitelist on existing tetangga mark rules
+            if (applyWlExclude && existing['src-address-list'] !== wlList) {
+              try {
+                await this.client.patch(`/ip/firewall/filter/${existing['.id']}`, {
+                  'src-address-list': wlList,
+                });
+                segResult[target.key] = 'updated-wl';
+              } catch {
+                segResult[target.key] = existing.invalid === 'true' ? 'invalid' : 'exists';
+              }
+            } else {
+              segResult[target.key] = existing.invalid === 'true' ? 'invalid' : 'exists';
+            }
             if (dropSibling?.['.id'] && existing['.id']) {
               try {
                 await this.client.post('/ip/firewall/filter/move', {
@@ -504,7 +522,6 @@ class MikroTikAPI {
                 /* ignore */
               }
             }
-            segResult[target.key] = existing.invalid === 'true' ? 'invalid' : 'exists';
           }
         } catch (err) {
           segResult[target.key] = 'error';
@@ -522,19 +539,32 @@ class MikroTikAPI {
         try {
           const existing = filters.find((r) => (r.comment || '') === target.comment);
           if (!existing) {
-            await this.client.put('/ip/firewall/filter', {
+            const body = {
               chain: 'forward',
               action: 'drop',
               'src-address': subnet,
               ttl: target.ttl,
               comment: target.comment,
-            });
+            };
+            if (applyWlExclude) body['src-address-list'] = wlList;
+            await this.client.put('/ip/firewall/filter', body);
             segResult[target.key] = 'created';
           } else if (existing.invalid === 'true') {
             // ROS sometimes marks new rules invalid briefly; leave and report
             segResult[target.key] = 'invalid';
           } else {
-            segResult[target.key] = 'exists';
+            if (applyWlExclude && existing['src-address-list'] !== wlList) {
+              try {
+                await this.client.patch(`/ip/firewall/filter/${existing['.id']}`, {
+                  'src-address-list': wlList,
+                });
+                segResult[target.key] = 'updated-wl';
+              } catch {
+                segResult[target.key] = 'exists';
+              }
+            } else {
+              segResult[target.key] = 'exists';
+            }
           }
         } catch (err) {
           segResult[target.key] = 'error';
@@ -553,6 +583,132 @@ class MikroTikAPI {
       segments: all.segments,
       errors: all.errors,
     };
+  }
+
+  /**
+   * Secondary AP/router whitelist (TL-WR840N):
+   * - address-list mikrobot-tether-whitelist
+   * - accept filter before mark/drop tether
+   * - mangle TTL=1 skip dst whitelist (NAT AP butuh TTL normal)
+   */
+  async ensureTetherWhitelist({
+    ips = [],
+    macs = [],
+    listName = 'mikrobot-tether-whitelist',
+  } = {}) {
+    const result = {
+      list: listName,
+      ips: [],
+      acceptRule: 'skip',
+      mangleSkip: 'skip',
+      errors: [],
+    };
+    if (!ips.length && !macs.length) return result;
+
+    // 1) address-list entries for IPs
+    try {
+      const existing = await this.getAddressList(listName);
+      const byAddr = new Map(existing.map((e) => [e.address, e]));
+      for (const ip of ips) {
+        if (byAddr.has(ip)) {
+          result.ips.push({ ip, status: 'exists' });
+          continue;
+        }
+        try {
+          await this.client.put('/ip/firewall/address-list', {
+            list: listName,
+            address: ip,
+            comment: 'MikroBot tether whitelist (secondary AP)',
+          });
+          result.ips.push({ ip, status: 'created' });
+        } catch (err) {
+          result.ips.push({ ip, status: 'error', error: err.message });
+          result.errors.push(`list ${ip}: ${err.message}`);
+        }
+      }
+    } catch (err) {
+      result.errors.push(`list: ${err.message}`);
+    }
+
+    // 2) accept rule early in forward so mark/drop tether never hit whitelist
+    try {
+      const filters = await this.getFilterRules();
+      const comment = 'MikroBot tether-whitelist accept';
+      let accept = filters.find((r) => (r.comment || '') === comment);
+
+      // place before first MikroBot mark-tether rule if possible
+      const firstMark = filters.find((r) =>
+        String(r.comment || '').includes('mark-tether')
+      );
+
+      if (!accept) {
+        const body = {
+          chain: 'forward',
+          action: 'accept',
+          'src-address-list': listName,
+          comment,
+        };
+        if (firstMark?.['.id']) body['place-before'] = firstMark['.id'];
+        await this.client.put('/ip/firewall/filter', body);
+        result.acceptRule = 'created';
+      } else {
+        // ensure correct match + move before mark if needed
+        if (accept['src-address-list'] !== listName || accept.action !== 'accept') {
+          await this.client.patch(`/ip/firewall/filter/${accept['.id']}`, {
+            chain: 'forward',
+            action: 'accept',
+            'src-address-list': listName,
+            comment,
+          });
+          result.acceptRule = 'updated';
+        } else {
+          result.acceptRule = 'exists';
+        }
+        if (firstMark?.['.id']) {
+          try {
+            await this.client.post('/ip/firewall/filter/move', {
+              numbers: accept['.id'],
+              destination: firstMark['.id'],
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch (err) {
+      result.acceptRule = 'error';
+      result.errors.push(`accept: ${err.message}`);
+    }
+
+    // 3) mangle TTL=1: skip packets destined to whitelist (NAT secondary AP)
+    //    MikroBot tetangga anti-tether TTL=1 should not break clients behind WR840N
+    try {
+      const mangles = await this.getMangleRules();
+      for (const m of mangles) {
+        const c = m.comment || '';
+        if (!c.includes('anti-tether TTL=1')) continue;
+        // hotspot: keep as-is (no whitelist AP there typically)
+        // tetangga / any with whitelist: add dst-address-list exclude
+        const needs =
+          m['dst-address-list'] !== `!${listName}` &&
+          // only patch rules that might hit secondary AP subnet
+          (c.includes('tetangga') || m['out-interface'] === 'ether2');
+        if (!needs) {
+          if (m['dst-address-list'] === `!${listName}`) result.mangleSkip = 'exists';
+          continue;
+        }
+        await this.client.patch(`/ip/firewall/mangle/${m['.id']}`, {
+          'dst-address-list': `!${listName}`,
+        });
+        result.mangleSkip = 'updated';
+      }
+      if (result.mangleSkip === 'skip') result.mangleSkip = 'none';
+    } catch (err) {
+      result.mangleSkip = 'error';
+      result.errors.push(`mangle: ${err.message}`);
+    }
+
+    return result;
   }
 
   async ensureMacBindOnProfiles() {

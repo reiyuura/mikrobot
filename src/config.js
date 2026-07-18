@@ -50,9 +50,29 @@ export const config = {
   tetherListTimeout: process.env.TETHER_LIST_TIMEOUT || '10m',
   tetherAutoPunish: parseBool(process.env.TETHER_AUTO_PUNISH, true),
 
+  // Secondary AP/router (e.g. TL-WR840N) — traffic NAT lewat sini, jangan ban
+  // Comma-separated. Default: WR840N tetangga.
+  tetherWhitelistIps: (process.env.TETHER_WHITELIST_IPS || '192.168.30.11')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  tetherWhitelistMacs: (process.env.TETHER_WHITELIST_MACS || '40:3F:8C:DF:43:EA')
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean),
+
   usernameLength: Number(process.env.USERNAME_LENGTH) || 6,
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',
 };
+
+/** True if IP/MAC is secondary AP/router whitelist (skip ban/notify). */
+export function isTetherWhitelisted({ address, mac } = {}) {
+  const ip = String(address || '').trim();
+  const m = String(mac || '').trim().toUpperCase();
+  if (ip && config.tetherWhitelistIps.includes(ip)) return true;
+  if (m && config.tetherWhitelistMacs.includes(m)) return true;
+  return false;
+}
 
 /** Segments protected by anti-tether rules. */
 export function getAntiTetherSegments() {
@@ -130,6 +150,8 @@ export function getTetherRuntime() {
     tetanggaSubnet: config.tetanggaSubnet,
     tetanggaMaxDevices: config.tetanggaMaxDevices,
     segments: getAntiTetherSegments().map((s) => s.name),
+    whitelistIps: [...config.tetherWhitelistIps],
+    whitelistMacs: [...config.tetherWhitelistMacs],
   };
 }
 

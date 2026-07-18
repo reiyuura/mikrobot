@@ -85,6 +85,26 @@ async function main() {
           }
         }
 
+        // Whitelist secondary AP/router (TL-WR840N) — no ban, TTL normal
+        if (config.tetherWhitelistIps.length || config.tetherWhitelistMacs.length) {
+          try {
+            const wl = await mikrotik.ensureTetherWhitelist({
+              ips: config.tetherWhitelistIps,
+              macs: config.tetherWhitelistMacs,
+            });
+            console.log(
+              `   [whitelist] accept=${wl.acceptRule} mangle=${wl.mangleSkip} ips=${wl.ips
+                .map((x) => `${x.ip}:${x.status}`)
+                .join(',') || '-'}`
+            );
+            if (wl.errors.length) {
+              console.warn('   whitelist warnings:', wl.errors.join('; '));
+            }
+          } catch (err) {
+            console.warn('   whitelist warning:', err.message);
+          }
+        }
+
         const mac = await mikrotik.ensureMacBindOnProfiles();
         if (mac.updated.length) {
           console.log(`   MAC bind added on profiles: ${mac.updated.join(', ')}`);

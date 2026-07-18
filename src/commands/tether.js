@@ -31,6 +31,10 @@ function statusText() {
   msg += `Hotspot    : <code>${r.interface}</code> / <code>${r.subnet}</code>\n`;
   msg += `Tetangga   : <b>${r.tetanggaEnabled ? 'ON' : 'OFF'}</b> · <code>${r.tetanggaInterface}</code> / <code>${r.tetanggaSubnet}</code>\n`;
   msg += `Max device : <code>${r.tetanggaMaxDevices}</code> (pool tetangga)\n`;
+  msg += `Whitelist  : <code>${(r.whitelistIps || []).join(', ') || '-'}</code>\n`;
+  if ((r.whitelistMacs || []).length) {
+    msg += `WL MAC     : <code>${r.whitelistMacs.join(', ')}</code>\n`;
+  }
   msg += `Poll       : <code>${r.pollSeconds}s</code>\n`;
   msg += `Cooldown   : <code>${r.cooldownMin} menit</code> (notif admin)\n`;
   msg += `Punish     : <code>${r.punishMin} menit</code>\n`;

@@ -1,6 +1,6 @@
 import { mikrotik } from './mikrotik.js';
 import { database } from './database.js';
-import { config } from './config.js';
+import { config, isTetherWhitelisted } from './config.js';
 import { getProfile, now, formatCurrency } from './utils.js';
 
 const CHECK_INTERVAL = 60 * 60 * 1000; // 1 jam (cleanup/activation)
@@ -264,6 +264,25 @@ async function checkTetherAbuse() {
       const key = hit.username || `ip:${hit.address}`;
       if (seen.has(key)) continue;
       seen.add(key);
+
+      // Secondary AP/router whitelist (TL-WR840N dll) — skip ban + notif
+      if (isTetherWhitelisted({ address: hit.address, mac: hit.mac })) {
+        try {
+          await mikrotik.removeAddressListEntry(hit.listId);
+        } catch {
+          /* ignore */
+        }
+        // also clear accidental ban list
+        try {
+          await mikrotik.unpunishDhcpAddress(hit.address);
+        } catch {
+          /* ignore */
+        }
+        console.log(
+          `⏭  Tether whitelist skip: ${hit.address} (${hit.mac || hit.hostName || '-'})`
+        );
+        continue;
+      }
 
       // Unknown IP residual
       if (!hit.username) {
